@@ -5,12 +5,15 @@ import time
 from typing import List, Dict, Any, Optional
 from agent.llm.groq_client import GroqClient, get_groq_client
 from agent.llm.prompts import create_system_prompt, create_react_prompt
+from agent.llm.enhanced_prompts import create_self_aware_system_prompt, create_intent_aware_react_prompt
 from agent.llm.parsers import ReActParser
 from agent.tools.registry import ToolRegistry, get_registry
 from agent.tools.base import ToolResult, ToolStatus
 from agent.state.session import SessionManager, get_session_manager
 from agent.learning.learning_manager import LearningManager, get_learning_manager
 from agent.state.context_tracker import ContextTracker, get_context_tracker
+from agent.core.intent_understanding import IntentUnderstanding, get_intent_understanding
+from agent.core.pre_action_reflection import PreActionReflection, get_pre_action_reflection
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -30,7 +33,10 @@ class AgentOrchestrator:
         enable_learning: bool = True,
         learning_manager: Optional[LearningManager] = None,
         enable_context_tracking: bool = True,
-        context_tracker: Optional[ContextTracker] = None
+        context_tracker: Optional[ContextTracker] = None,
+        enable_self_awareness: bool = True,
+        intent_understanding: Optional[IntentUnderstanding] = None,
+        pre_action_reflection: Optional[PreActionReflection] = None
     ):
         """Initialize agent orchestrator.
 
@@ -45,6 +51,9 @@ class AgentOrchestrator:
             learning_manager: Learning manager (defaults to global)
             enable_context_tracking: Enable context chain tracking
             context_tracker: Context tracker (defaults to global)
+            enable_self_awareness: Enable intent understanding & pre-action reflection
+            intent_understanding: Intent understanding system (defaults to global)
+            pre_action_reflection: Pre-action reflection system (defaults to global)
         """
         self.llm = llm_client or get_groq_client()
         self.registry = tool_registry or get_registry()
@@ -53,9 +62,12 @@ class AgentOrchestrator:
         self.enable_persistence = enable_persistence
         self.enable_learning = enable_learning
         self.enable_context_tracking = enable_context_tracking
+        self.enable_self_awareness = enable_self_awareness
         self.session_manager = session_manager or (get_session_manager() if enable_persistence else None)
         self.learning_manager = learning_manager or (get_learning_manager() if enable_learning else None)
         self.context_tracker = context_tracker or (get_context_tracker() if enable_context_tracking else None)
+        self.intent_understanding = intent_understanding or (get_intent_understanding(self.llm) if enable_self_awareness else None)
+        self.pre_action_reflection = pre_action_reflection or (get_pre_action_reflection(self.llm) if enable_self_awareness else None)
 
         # Agent state
         self.history: List[tuple[str, str]] = []
@@ -68,6 +80,8 @@ class AgentOrchestrator:
             logger.info("Reflective learning system enabled")
         if self.enable_context_tracking:
             logger.info("Context chain tracking enabled")
+        if self.enable_self_awareness:
+            logger.info("Self-aware AI system enabled (Intent Understanding & Pre-Action Reflection)")
 
     def run(self, task: str) -> str:
         """Run agent on a task using ReAct pattern.
@@ -87,6 +101,27 @@ class AgentOrchestrator:
             print(f"\n{'='*60}")
             print(f"Task: {task}")
             print(f"{'='*60}\n")
+
+        # Understand user intent (if self-awareness enabled)
+        intent_analysis = None
+        if self.enable_self_awareness and self.intent_understanding:
+            try:
+                if self.verbose:
+                    print("🎯 Analyzing user intent...")
+                intent_analysis = self.intent_understanding.understand_intent(task, context=None)
+                if self.verbose:
+                    print(f"   Intent: {intent_analysis.intent.value}")
+                    print(f"   Confidence: {intent_analysis.confidence:.2f}")
+                    if intent_analysis.target_object:
+                        print(f"   Target: {intent_analysis.target_object}")
+                    print(f"   Expected: {intent_analysis.expected_outcome.what}")
+                    if intent_analysis.prerequisites:
+                        print(f"   Prerequisites: {', '.join(intent_analysis.prerequisites[:2])}")
+                    print()
+            except Exception as e:
+                logger.warning(f"Intent understanding failed: {e}")
+                if self.verbose:
+                    print(f"   ⚠️  Intent analysis failed, continuing without it\n")
 
         # Get available tools
         tools = self.registry.list_tools()
@@ -114,8 +149,11 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.warning(f"Could not retrieve past experiences: {e}")
 
-        # Create system prompt
-        system_prompt = create_system_prompt(tools)
+        # Create system prompt (use enhanced version if self-awareness enabled)
+        if self.enable_self_awareness:
+            system_prompt = create_self_aware_system_prompt(tools)
+        else:
+            system_prompt = create_system_prompt(tools)
 
         # ReAct loop
         while self.iteration < self.max_iterations:
@@ -133,14 +171,31 @@ class AgentOrchestrator:
             # Trim history to save tokens (keep only last N iterations)
             trimmed_history = self.history[-settings.history_keep_last_n:] if len(self.history) > settings.history_keep_last_n else self.history
 
-            # Create prompt with current context
-            prompt = create_react_prompt(
-                question=task,
-                tools=tools,
-                history=trimmed_history,
-                current_iteration=self.iteration,
-                max_iterations=self.max_iterations
-            )
+            # Create prompt with current context (use intent-aware version if available)
+            if self.enable_self_awareness and intent_analysis:
+                # Format intent analysis for prompt
+                intent_text = f"""Intent: {intent_analysis.intent.value} (confidence: {intent_analysis.confidence:.2f})
+Target: {intent_analysis.target_object or 'N/A'}
+Expected Outcome: {intent_analysis.expected_outcome.what}
+Prerequisites: {', '.join(intent_analysis.prerequisites) if intent_analysis.prerequisites else 'None'}
+Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
+
+                prompt = create_intent_aware_react_prompt(
+                    question=task,
+                    tools=tools,
+                    history=trimmed_history,
+                    current_iteration=self.iteration,
+                    max_iterations=self.max_iterations,
+                    intent_analysis=intent_text
+                )
+            else:
+                prompt = create_react_prompt(
+                    question=task,
+                    tools=tools,
+                    history=trimmed_history,
+                    current_iteration=self.iteration,
+                    max_iterations=self.max_iterations
+                )
 
             # Get LLM response with retry logic for rate limits
             max_retries = 3
@@ -365,6 +420,58 @@ class AgentOrchestrator:
                 kwargs = {"input": action_input}
             else:
                 kwargs = {}
+
+            # Pre-Action Reflection (if self-awareness enabled)
+            if self.enable_self_awareness and self.pre_action_reflection:
+                try:
+                    # Reflect before executing action
+                    reflection_result = self.pre_action_reflection.reflect_before_action(
+                        user_intent=self.current_task or "Unknown task",
+                        planned_action=action,
+                        action_parameters=kwargs,
+                        context={"iteration": self.iteration}
+                    )
+
+                    # Check if we should proceed
+                    if not reflection_result.should_proceed:
+                        # Reflection says STOP!
+                        if self.verbose:
+                            print(f"⚠️  Pre-Action Reflection: STOP")
+                            print(f"   Reasoning: {reflection_result.reasoning}")
+                            if reflection_result.alternative_action:
+                                print(f"   Alternative: {reflection_result.alternative_action}")
+                            print()
+
+                        # Return alternative action or error message
+                        observation = reflection_result.alternative_action or reflection_result.reasoning
+
+                        # Track context for stopped action
+                        if self.enable_context_tracking and self.context_tracker:
+                            try:
+                                self.context_tracker.add_event(
+                                    user_command=self.current_task or "Unknown task",
+                                    ai_action=f"{action} (stopped by reflection)",
+                                    result=observation,
+                                    status="stopped_by_reflection",
+                                    metadata={
+                                        "iteration": self.iteration,
+                                        "reflection_reasoning": reflection_result.reasoning
+                                    }
+                                )
+                            except Exception as e:
+                                logger.warning(f"Failed to track reflection stop: {e}")
+
+                        return observation
+
+                    # Show warnings if any
+                    if reflection_result.warnings and self.verbose:
+                        print(f"⚠️  Warnings: {', '.join(reflection_result.warnings)}")
+                        print()
+
+                except Exception as e:
+                    logger.warning(f"Pre-action reflection failed: {e}")
+                    # Continue with action if reflection fails
+                    pass
 
             # Execute tool
             result: ToolResult = self.registry.execute(action, **kwargs)
