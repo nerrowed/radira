@@ -19,6 +19,7 @@ from agent.tools.registry import ToolRegistry, get_registry
 from agent.tools.base import ToolResult, ToolStatus
 from agent.state.session import SessionManager, get_session_manager
 from agent.learning.learning_manager import LearningManager, get_learning_manager
+from agent.state.context_tracker import ContextTracker, get_context_tracker
 from agent.core.task_classifier import TaskClassifier, TaskType, get_task_classifier
 from agent.core.answer_validator import AnswerValidator, get_answer_validator
 from config.settings import settings
@@ -39,8 +40,10 @@ class DualOrchestrator:
         verbose: bool = True,
         enable_persistence: bool = True,
         enable_learning: bool = True,
+        enable_context_tracking: bool = True,
         session_manager: Optional[SessionManager] = None,
-        learning_manager: Optional[LearningManager] = None
+        learning_manager: Optional[LearningManager] = None,
+        context_tracker: Optional[ContextTracker] = None
     ):
         """Initialize dual orchestrator.
 
@@ -53,8 +56,10 @@ class DualOrchestrator:
             verbose: Whether to print detailed logs
             enable_persistence: Enable state persistence
             enable_learning: Enable reflective learning
+            enable_context_tracking: Enable context chain tracking
             session_manager: Session manager (defaults to global)
             learning_manager: Learning manager (defaults to global)
+            context_tracker: Context tracker (defaults to global)
         """
         self.llm = llm_client or get_groq_client()
         self.registry = tool_registry or get_registry()
@@ -64,8 +69,10 @@ class DualOrchestrator:
         self.verbose = verbose
         self.enable_persistence = enable_persistence
         self.enable_learning = enable_learning
+        self.enable_context_tracking = enable_context_tracking
         self.session_manager = session_manager or (get_session_manager() if enable_persistence else None)
         self.learning_manager = learning_manager or (get_learning_manager() if enable_learning else None)
+        self.context_tracker = context_tracker or (get_context_tracker() if enable_context_tracking else None)
 
         # Agent state
         self.history: List[tuple[str, str]] = []
@@ -77,6 +84,8 @@ class DualOrchestrator:
         logger.info(f"Dual orchestrator initialized with {len(self.registry)} tools")
         if self.enable_learning:
             logger.info("Reflective learning system enabled")
+        if self.enable_context_tracking:
+            logger.info("Context chain tracking enabled")
 
     def run(self, task: str) -> str:
         """Run agent on task with intelligent routing.
@@ -404,6 +413,23 @@ Jawab dengan jelas dan ringkas berdasarkan pengetahuanmu. Jika ada konteks di at
                     print(f"Completed in {self.iteration} iterations")
                     self._print_stats()
 
+                # Track final answer in context chain
+                if self.enable_context_tracking and self.context_tracker:
+                    try:
+                        self.context_tracker.add_event(
+                            user_command=self.current_task or "Unknown task",
+                            ai_action="Final Answer",
+                            result=final_answer,
+                            status="completed",
+                            metadata={
+                                "iteration": self.iteration,
+                                "total_actions": len(self.history),
+                                "task_type": self.task_type.value if self.task_type else "unknown"
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to track final answer context: {e}")
+
                 # Learn from success
                 if self.enable_learning and self.learning_manager:
                     self._learn_from_execution(success=True, outcome=final_answer)
@@ -591,6 +617,23 @@ Final Answer: File halo.txt has been created successfully with the content you r
             if self.verbose:
                 print(f"✓ Extracted answer from observation\n")
 
+            # Track forced conclusion (extracted answer)
+            if self.enable_context_tracking and self.context_tracker:
+                try:
+                    self.context_tracker.add_event(
+                        user_command=self.current_task or "Unknown task",
+                        ai_action="Forced Conclusion (Extracted)",
+                        result=answer,
+                        status="completed",
+                        metadata={
+                            "iteration": self.iteration,
+                            "total_actions": len(self.history),
+                            "task_type": self.task_type.value if self.task_type else "unknown"
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to track forced conclusion context: {e}")
+
             # Learn from this
             if self.enable_learning and self.learning_manager:
                 self._learn_from_execution(success=True, outcome=answer)
@@ -605,6 +648,24 @@ Final Answer: File halo.txt has been created successfully with the content you r
             outcome = f"Task incomplete after {self.iteration} iterations. Actions attempted: {', '.join(actions_taken)}. Last result: {last_obs[:200]}"
         else:
             outcome = f"Task could not be completed. No actions were successfully executed."
+
+        # Track incomplete task
+        if self.enable_context_tracking and self.context_tracker:
+            try:
+                self.context_tracker.add_event(
+                    user_command=self.current_task or "Unknown task",
+                    ai_action="Task Incomplete",
+                    result=outcome,
+                    status="incomplete",
+                    metadata={
+                        "iteration": self.iteration,
+                        "max_iterations": self.max_iterations,
+                        "total_actions": len(self.history),
+                        "task_type": self.task_type.value if self.task_type else "unknown"
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Failed to track incomplete task context: {e}")
 
         # Learn from incomplete task
         if self.enable_learning and self.learning_manager:
@@ -627,6 +688,24 @@ Final Answer: File halo.txt has been created successfully with the content you r
                 available = ", ".join(self.registry.list_tool_names())
                 error_msg = f"Error: Tool '{action}' not found. Available: {available}"
                 self.errors_encountered.append(error_msg)
+
+                # Track context for tool not found
+                if self.enable_context_tracking and self.context_tracker:
+                    try:
+                        self.context_tracker.add_event(
+                            user_command=self.current_task or "Unknown task",
+                            ai_action=action,
+                            result=error_msg,
+                            status="error",
+                            metadata={
+                                "iteration": self.iteration,
+                                "error_type": "ToolNotFound",
+                                "task_type": self.task_type.value if self.task_type else "unknown"
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to track context: {e}")
+
                 return error_msg
 
             tool = self.registry.get(action)
@@ -672,10 +751,12 @@ Final Answer: File halo.txt has been created successfully with the content you r
 
             if result.is_success:
                 observation = str(result.output)
+                status = "success"
             else:
                 error_msg = f"Error: {result.error}"
                 self.errors_encountered.append(error_msg)
                 observation = error_msg
+                status = "error"
 
                 # Display remediation info if available and verbose
                 if self.verbose and result.metadata and 'remediation' in result.metadata:
@@ -702,12 +783,47 @@ Final Answer: File halo.txt has been created successfully with the content you r
                         if remediation.get('auto_fixable'):
                             print(f"   ✨ This error may be auto-fixable in future versions\n")
 
+            # Track context chain
+            if self.enable_context_tracking and self.context_tracker:
+                try:
+                    self.context_tracker.add_event(
+                        user_command=self.current_task or "Unknown task",
+                        ai_action=action,
+                        result=observation,
+                        status=status,
+                        metadata={
+                            "iteration": self.iteration,
+                            "action_input": str(action_input)[:200] if action_input else "",
+                            "task_type": self.task_type.value if self.task_type else "unknown"
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to track context: {e}")
+
             return observation
 
         except Exception as e:
             logger.error(f"Action execution error: {e}")
             error_msg = f"Error executing '{action}': {str(e)}"
             self.errors_encountered.append(error_msg)
+
+            # Track context even for exceptions
+            if self.enable_context_tracking and self.context_tracker:
+                try:
+                    self.context_tracker.add_event(
+                        user_command=self.current_task or "Unknown task",
+                        ai_action=action,
+                        result=error_msg,
+                        status="error",
+                        metadata={
+                            "iteration": self.iteration,
+                            "error_type": type(e).__name__,
+                            "task_type": self.task_type.value if self.task_type else "unknown"
+                        }
+                    )
+                except Exception as track_error:
+                    logger.warning(f"Failed to track error context: {track_error}")
+
             return error_msg
 
     def _learn_from_simple_task(self, task: str, answer: str, success: bool):
