@@ -1,0 +1,26 @@
+# Minimal dependencies for AI Agent to run
+# Install with: pip install -r requirements-minimal.txt
+
+# Core - Groq AI API
+groq>=0.4.0
+
+# Core - LangChain (minimal)
+langchain>=0.1.0
+langchain-groq>=0.0.1
+langchain-core>=0.1.0
+
+# Core - Environment Config
+python-dotenv>=1.0.0
+
+# Core - Beautiful CLI Output
+rich>=13.7.0
+
+# Quick Win Package Features
+duckduckgo-search>=4.0.0  # Web search capability
+redis>=5.0.0  # State persistence
+
+# Reflective Learning System
+chromadb>=0.4.0  # Vector memory for learning and experience storage
+
+# That's it! Agent will work with these core packages.
+# Other dependencies (database, API server, etc.) are optional for future features.

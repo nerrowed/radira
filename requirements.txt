@@ -1,0 +1,39 @@
+# AI Autonomous Agent - Dependencies
+
+# Core - Groq AI API
+groq>=0.4.0
+
+# Core - LangChain Framework
+langchain>=0.1.0
+langchain-groq>=0.0.1
+
+# Core - Environment & Config
+python-dotenv>=1.0.0
+
+# Core - Beautiful CLI Output
+rich>=13.7.0
+
+# Optional - Web Framework (for API server - Phase 4)
+fastapi>=0.109.0
+uvicorn>=0.27.0
+pydantic>=2.5.0
+
+# Optional - Database & Cache (for state management - Phase 3)
+redis>=5.0.0
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.25
+
+# Optional - Vector Database (for memory/learning - Phase 3)
+chromadb>=0.4.22
+sentence-transformers>=2.3.1
+
+# Optional - Task Queue (for async operations - Phase 4)
+celery>=5.3.4
+
+# Optional - Additional Utilities
+colorama>=0.4.6
+requests>=2.31.0
+httpx>=0.26.0
+pyyaml>=6.0.1
+
+# Note: subprocess and pathlib are built-in Python modules, no need to install
