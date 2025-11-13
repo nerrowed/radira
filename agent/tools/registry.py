@@ -211,13 +211,50 @@ _registry: Optional[ToolRegistry] = None
 def get_registry() -> ToolRegistry:
     """Get or create singleton tool registry.
 
+    Auto-registers all available tools on first call.
+
     Returns:
         ToolRegistry instance
     """
     global _registry
     if _registry is None:
         _registry = ToolRegistry()
+
+        # Auto-register default tools
+        _auto_register_tools(_registry)
+
     return _registry
+
+
+def _auto_register_tools(registry: ToolRegistry):
+    """Auto-register all available tools.
+
+    Args:
+        registry: ToolRegistry instance
+    """
+    try:
+        # Register core tools
+        from agent.tools.filesystem import FileSystemTool
+        from agent.tools.terminal import TerminalTool
+        from agent.tools.web_search import WebSearchTool
+        from agent.tools.web_generator import WebGeneratorTool
+
+        registry.register(FileSystemTool())
+        registry.register(TerminalTool())
+        registry.register(WebSearchTool())
+        registry.register(WebGeneratorTool())
+
+        logger.info("Registered core tools")
+    except Exception as e:
+        logger.warning(f"Failed to register some core tools: {e}")
+
+    try:
+        # Register custom function tools
+        from agent.tools.custom_functions import register_custom_tools
+        register_custom_tools(registry)
+        logger.info("Registered custom function tools")
+    except Exception as e:
+        logger.warning(f"Failed to register custom function tools: {e}")
 
 
 def register_tool(tool: BaseTool) -> None:

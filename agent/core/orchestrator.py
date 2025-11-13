@@ -5,7 +5,13 @@ import time
 from typing import List, Dict, Any, Optional
 from agent.llm.groq_client import GroqClient, get_groq_client
 from agent.llm.prompts import create_system_prompt, create_react_prompt
-from agent.llm.enhanced_prompts import create_self_aware_system_prompt, create_intent_aware_react_prompt
+from agent.llm.enhanced_prompts import (
+    create_self_aware_system_prompt,
+    create_intent_aware_react_prompt,
+    create_agentic_reasoning_prompt,
+    format_retrieval_context,
+    create_prompt_with_retrieval
+)
 from agent.llm.parsers import ReActParser
 from agent.tools.registry import ToolRegistry, get_registry
 from agent.tools.base import ToolResult, ToolStatus
@@ -130,27 +136,51 @@ class AgentOrchestrator:
             return "Error: No tools available to complete the task."
 
         # Retrieve relevant past experiences (if learning enabled)
+        retrieval_context = None
         if self.enable_learning and self.learning_manager:
             try:
-                relevant_experience = self.learning_manager.get_relevant_experience(task, n_results=2)
+                logger.info("[RETRIEVAL] Searching semantic memory for relevant experiences...")
+                relevant_experience = self.learning_manager.get_relevant_experience(task, n_results=3)
 
-                if relevant_experience["similar_experiences"]:
-                    success_count = sum(1 for e in relevant_experience["similar_experiences"] if e.get("success", False))
-                    if self.verbose:
-                        print(f"💡 Found {len(relevant_experience['similar_experiences'])} similar past experiences")
-                        print(f"   {success_count} successful, {len(relevant_experience['similar_experiences']) - success_count} failed")
+                # Count retrieved items
+                exp_count = len(relevant_experience.get("similar_experiences", []))
+                lesson_count = len(relevant_experience.get("relevant_lessons", []))
+                strategy_count = len(relevant_experience.get("recommended_strategies", []))
+
+                if self.verbose:
+                    print(f"[RETRIEVAL] Found {exp_count} experiences, {lesson_count} lessons, {strategy_count} strategies")
+
+                    if relevant_experience["similar_experiences"]:
+                        success_count = sum(1 for e in relevant_experience["similar_experiences"] if e.get("success", False))
+                        print(f"            {success_count} successful, {exp_count - success_count} failed")
 
                         # Show relevant lessons
                         if relevant_experience["relevant_lessons"]:
-                            print(f"📚 Relevant lessons learned:")
+                            print(f"[RETRIEVAL] Relevant lessons:")
                             for lesson in relevant_experience["relevant_lessons"][:2]:
-                                print(f"   • {lesson['lesson'][:80]}...")
-                        print()
+                                print(f"            • {lesson['lesson'][:80]}...")
+                    print()
+
+                # Format retrieval results into context string for prompt injection
+                retrieval_context = format_retrieval_context(
+                    experiences=relevant_experience.get("similar_experiences", []),
+                    lessons=relevant_experience.get("relevant_lessons", []),
+                    strategies=relevant_experience.get("recommended_strategies", [])
+                )
+
+                if retrieval_context:
+                    logger.info(f"[RETRIEVAL] {exp_count + lesson_count + strategy_count} memories will be injected into prompt")
+
             except Exception as e:
                 logger.warning(f"Could not retrieve past experiences: {e}")
 
-        # Create system prompt (use enhanced version if self-awareness enabled)
-        if self.enable_self_awareness:
+        # Create system prompt (use agentic reasoning version if learning enabled)
+        if self.enable_learning:
+            # Use agentic reasoning prompt with semantic memory awareness
+            system_prompt = create_agentic_reasoning_prompt(tools)
+            if self.verbose:
+                print("[THINKING] Using agentic reasoning mode with semantic memory\n")
+        elif self.enable_self_awareness:
             system_prompt = create_self_aware_system_prompt(tools)
         else:
             system_prompt = create_system_prompt(tools)
@@ -166,13 +196,33 @@ class AgentOrchestrator:
                 time.sleep(settings.iteration_delay_seconds)
 
             if self.verbose:
-                print(f"--- Iteration {self.iteration}/{self.max_iterations} ---\n")
+                print(f"[THINKING] --- Iteration {self.iteration}/{self.max_iterations} ---\n")
 
             # Trim history to save tokens (keep only last N iterations)
             trimmed_history = self.history[-settings.history_keep_last_n:] if len(self.history) > settings.history_keep_last_n else self.history
 
-            # Create prompt with current context (use intent-aware version if available)
-            if self.enable_self_awareness and intent_analysis:
+            # Create prompt with current context
+            # Priority: retrieval-enhanced > intent-aware > standard
+            if self.enable_learning and retrieval_context:
+                # Use retrieval-enhanced prompt with semantic memory injection
+                intent_text = None
+                if self.enable_self_awareness and intent_analysis:
+                    intent_text = f"""Intent: {intent_analysis.intent.value} (confidence: {intent_analysis.confidence:.2f})
+Target: {intent_analysis.target_object or 'N/A'}
+Expected Outcome: {intent_analysis.expected_outcome.what}
+Prerequisites: {', '.join(intent_analysis.prerequisites) if intent_analysis.prerequisites else 'None'}
+Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
+
+                prompt = create_prompt_with_retrieval(
+                    question=task,
+                    tools=tools,
+                    history=trimmed_history,
+                    current_iteration=self.iteration,
+                    max_iterations=self.max_iterations,
+                    retrieval_context=retrieval_context,
+                    intent_analysis=intent_text
+                )
+            elif self.enable_self_awareness and intent_analysis:
                 # Format intent analysis for prompt
                 intent_text = f"""Intent: {intent_analysis.intent.value} (confidence: {intent_analysis.confidence:.2f})
 Target: {intent_analysis.target_object or 'N/A'}
@@ -321,14 +371,14 @@ Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
                     continue
 
             if self.verbose:
-                print(f"→ Action: {action}")
-                print(f"→ Input: {action_input}\n")
+                print(f"[ACTION] Executing: {action}")
+                print(f"[ACTION] Input: {action_input}\n")
 
             # Execute tool
             observation = self._execute_action(action, action_input)
 
             if self.verbose:
-                print(f"← Observation: {observation}\n")
+                print(f"[ACTION] Result: {observation[:200]}{'...' if len(observation) > 200 else ''}\n")
 
             # Add to history
             self.history.append((action, observation))
@@ -545,7 +595,7 @@ Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
             task = self.current_task or "Unknown task"
 
             if self.verbose:
-                print(f"\n🧠 Reflecting on execution...")
+                print(f"\n[LEARNED] Reflecting on execution and storing insights...")
 
             # Learn from task
             learning_summary = self.learning_manager.learn_from_task(
@@ -564,18 +614,25 @@ Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
                 lessons_count = learning_summary.get("lessons_count", 0)
                 strategies_count = learning_summary.get("strategies_count", 0)
 
-                print(f"   ✓ Stored experience: {learning_summary['experience_id']}")
+                print(f"[LEARNED] Stored experience: {learning_summary['experience_id']}")
                 if lessons_count > 0:
-                    print(f"   ✓ Learned {lessons_count} lesson(s)")
+                    print(f"[LEARNED] Learned {lessons_count} lesson(s)")
                 if strategies_count > 0:
-                    print(f"   ✓ Recorded {strategies_count} successful strategy(ies)")
+                    print(f"[LEARNED] Recorded {strategies_count} successful strategy(ies)")
 
                 # Show improvements
                 improvements = learning_summary.get("improvements_suggested", [])
                 if improvements:
-                    print(f"   💡 Improvement suggestions:")
+                    print(f"[LEARNED] Improvement suggestions:")
                     for imp in improvements[:2]:
-                        print(f"      • {imp}")
+                        print(f"          • {imp}")
+
+                # Show what was learned
+                reflection = learning_summary.get("reflection", {})
+                if reflection.get("lessons"):
+                    print(f"[LEARNED] Key insights:")
+                    for lesson in reflection["lessons"][:2]:
+                        print(f"          • {lesson['lesson'][:100]}")
 
                 print()
 
