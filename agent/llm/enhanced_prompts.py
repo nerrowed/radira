@@ -4,6 +4,8 @@ Prompts yang membuat AI lebih "ngeh" dengan tugasnya,
 lebih understand intent, dan lebih careful dalam mengambil action.
 """
 
+from typing import List, Optional
+
 
 def create_self_aware_system_prompt(tools) -> str:
     """Create system prompt that makes AI more self-aware."""
