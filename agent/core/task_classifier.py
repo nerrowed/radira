@@ -150,12 +150,12 @@ class TaskClassifier:
         tool_mapping = {
             TaskType.CONVERSATIONAL: [],  # No tools
             TaskType.SIMPLE_QA: [],  # Direct LLM
-            TaskType.FILE_OPERATION: ["filesystem"],
+            TaskType.FILE_OPERATION: ["file_system"],
             TaskType.WEB_SEARCH: ["web_search"],
-            TaskType.CODE_GENERATION: ["filesystem", "terminal"],
-            TaskType.PENTEST: ["pentest", "terminal", "filesystem"],
+            TaskType.CODE_GENERATION: ["file_system", "terminal"],
+            TaskType.PENTEST: ["pentest", "terminal", "file_system"],
             TaskType.TERMINAL_COMMAND: ["terminal"],
-            TaskType.COMPLEX_MULTI_STEP: ["filesystem", "terminal", "web_search"],  # All tools
+            TaskType.COMPLEX_MULTI_STEP: ["file_system", "terminal", "web_search"],  # All tools
         }
 
         return tool_mapping.get(task_type, [])
