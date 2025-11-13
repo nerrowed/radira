@@ -10,6 +10,7 @@ from agent.tools.registry import ToolRegistry, get_registry
 from agent.tools.base import ToolResult, ToolStatus
 from agent.state.session import SessionManager, get_session_manager
 from agent.learning.learning_manager import LearningManager, get_learning_manager
+from agent.state.context_tracker import ContextTracker, get_context_tracker
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,9 @@ class AgentOrchestrator:
         enable_persistence: bool = True,
         session_manager: Optional[SessionManager] = None,
         enable_learning: bool = True,
-        learning_manager: Optional[LearningManager] = None
+        learning_manager: Optional[LearningManager] = None,
+        enable_context_tracking: bool = True,
+        context_tracker: Optional[ContextTracker] = None
     ):
         """Initialize agent orchestrator.
 
@@ -40,6 +43,8 @@ class AgentOrchestrator:
             session_manager: Session manager (defaults to global)
             enable_learning: Enable reflective learning system
             learning_manager: Learning manager (defaults to global)
+            enable_context_tracking: Enable context chain tracking
+            context_tracker: Context tracker (defaults to global)
         """
         self.llm = llm_client or get_groq_client()
         self.registry = tool_registry or get_registry()
@@ -47,8 +52,10 @@ class AgentOrchestrator:
         self.verbose = verbose
         self.enable_persistence = enable_persistence
         self.enable_learning = enable_learning
+        self.enable_context_tracking = enable_context_tracking
         self.session_manager = session_manager or (get_session_manager() if enable_persistence else None)
         self.learning_manager = learning_manager or (get_learning_manager() if enable_learning else None)
+        self.context_tracker = context_tracker or (get_context_tracker() if enable_context_tracking else None)
 
         # Agent state
         self.history: List[tuple[str, str]] = []
@@ -59,6 +66,8 @@ class AgentOrchestrator:
         logger.info(f"Agent initialized with {len(self.registry)} tools")
         if self.enable_learning:
             logger.info("Reflective learning system enabled")
+        if self.enable_context_tracking:
+            logger.info("Context chain tracking enabled")
 
     def run(self, task: str) -> str:
         """Run agent on a task using ReAct pattern.
@@ -212,6 +221,22 @@ class AgentOrchestrator:
                     print(f"Completed in {self.iteration} iterations")
                     self._print_stats()
 
+                # Track final answer in context chain
+                if self.enable_context_tracking and self.context_tracker:
+                    try:
+                        self.context_tracker.add_event(
+                            user_command=self.current_task or "Unknown task",
+                            ai_action="Final Answer",
+                            result=final_answer,
+                            status="completed",
+                            metadata={
+                                "iteration": self.iteration,
+                                "total_actions": len(self.history)
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to track final answer context: {e}")
+
                 # Learn from this successful task
                 if self.enable_learning and self.learning_manager:
                     self._learn_from_execution(
@@ -260,6 +285,23 @@ class AgentOrchestrator:
             print(f"\n⚠️  Max iterations ({self.max_iterations}) reached without final answer\n")
             self._print_stats()
 
+        # Track incomplete task in context chain
+        if self.enable_context_tracking and self.context_tracker:
+            try:
+                self.context_tracker.add_event(
+                    user_command=self.current_task or "Unknown task",
+                    ai_action="Max Iterations Reached",
+                    result=outcome,
+                    status="incomplete",
+                    metadata={
+                        "iteration": self.iteration,
+                        "max_iterations": self.max_iterations,
+                        "total_actions": len(self.history)
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Failed to track incomplete task context: {e}")
+
         # Learn from this incomplete task
         if self.enable_learning and self.learning_manager:
             self._learn_from_execution(
@@ -285,6 +327,23 @@ class AgentOrchestrator:
                 available = ", ".join(self.registry.list_tool_names())
                 error_msg = f"Error: Tool '{action}' not found. Available tools: {available}"
                 self.errors_encountered.append(error_msg)
+
+                # Track context for tool not found
+                if self.enable_context_tracking and self.context_tracker:
+                    try:
+                        self.context_tracker.add_event(
+                            user_command=self.current_task or "Unknown task",
+                            ai_action=action,
+                            result=error_msg,
+                            status="error",
+                            metadata={
+                                "iteration": self.iteration,
+                                "error_type": "ToolNotFound"
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to track context: {e}")
+
                 return error_msg
 
             # Get tool
@@ -313,10 +372,28 @@ class AgentOrchestrator:
             # Format observation
             if result.is_success:
                 observation = str(result.output)
+                status = "success"
             else:
                 error_msg = f"Error: {result.error}"
                 self.errors_encountered.append(error_msg)
                 observation = error_msg
+                status = "error"
+
+            # Track context chain
+            if self.enable_context_tracking and self.context_tracker:
+                try:
+                    self.context_tracker.add_event(
+                        user_command=self.current_task or "Unknown task",
+                        ai_action=action,
+                        result=observation,
+                        status=status,
+                        metadata={
+                            "iteration": self.iteration,
+                            "action_input": str(action_input)[:200] if action_input else ""
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to track context: {e}")
 
             return observation
 
@@ -324,6 +401,23 @@ class AgentOrchestrator:
             logger.error(f"Action execution error: {e}")
             error_msg = f"Error executing tool '{action}': {str(e)}"
             self.errors_encountered.append(error_msg)
+
+            # Track context even for exceptions
+            if self.enable_context_tracking and self.context_tracker:
+                try:
+                    self.context_tracker.add_event(
+                        user_command=self.current_task or "Unknown task",
+                        ai_action=action,
+                        result=error_msg,
+                        status="error",
+                        metadata={
+                            "iteration": self.iteration,
+                            "error_type": type(e).__name__
+                        }
+                    )
+                except Exception as track_error:
+                    logger.warning(f"Failed to track error context: {track_error}")
+
             return error_msg
 
     def _learn_from_execution(self, success: bool, outcome: str):
