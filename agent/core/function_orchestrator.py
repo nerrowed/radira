@@ -15,6 +15,7 @@ from agent.llm.function_definitions import (
 from agent.tools.registry import get_registry
 from agent.tools.base import ToolResult
 from agent.core.confirmation_manager import ConfirmationManager, ConfirmationMode
+from agent.core.exceptions import ContextOverflowError, TokenLimitExceededError
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -72,10 +73,16 @@ class FunctionOrchestrator:
         # Conversation history
         self.messages: List[Dict[str, Any]] = []
 
+        # Context management
+        self.max_context_messages = settings.history_keep_last_n * 2  # User + Assistant pairs
+        self.max_tokens_per_task = settings.max_total_tokens_per_task
+        self.current_token_usage = 0
+
         # Stats
         self.total_iterations = 0
         self.total_tool_calls = 0
         self.tools_executed = []  # Track for experience storage
+        self.total_tokens_used = 0
 
         if self.verbose:
             print(f"\n🤖 Function Orchestrator initialized")
@@ -144,6 +151,9 @@ class FunctionOrchestrator:
             if self.verbose:
                 print(f"💭 [Iteration {iteration}/{self.max_iterations}] LLM thinking...")
 
+            # Manage context window before making request
+            self._manage_context_window()
+
             # Call LLM with functions
             response = self.llm.chat_with_functions(
                 messages=self.messages,
@@ -152,6 +162,24 @@ class FunctionOrchestrator:
                 max_tokens=2048,
                 tool_choice="auto"
             )
+
+            # Track token usage
+            usage = response.get("usage", {})
+            tokens_used = usage.get("total_tokens", 0)
+            self.current_token_usage += tokens_used
+            self.total_tokens_used += tokens_used
+
+            # Check token budget
+            if self.current_token_usage > self.max_tokens_per_task:
+                logger.warning(
+                    f"Token budget exceeded: {self.current_token_usage}/{self.max_tokens_per_task}"
+                )
+                raise TokenLimitExceededError(
+                    f"Task token budget exceeded",
+                    token_count=self.current_token_usage,
+                    limit=self.max_tokens_per_task,
+                    details={"iteration": iteration}
+                )
 
             # Check if LLM wants to call tools
             tool_calls = response.get("tool_calls")
@@ -287,6 +315,87 @@ class FunctionOrchestrator:
             "name": function_name,
             "content": result_content
         })
+
+    def _manage_context_window(self) -> None:
+        """Manage context window to prevent overflow.
+
+        Strategy:
+        1. Keep system message (always first)
+        2. Keep original user message (always second)
+        3. Keep last N conversation turns (configurable)
+        4. Truncate long tool results to summaries
+        """
+        if len(self.messages) <= 2:
+            # Only system + user message, nothing to manage
+            return
+
+        # Calculate current context size
+        estimated_tokens = self._estimate_context_tokens()
+
+        # If under limit and message count reasonable, no action needed
+        max_messages = self.max_context_messages + 2  # +2 for system and user
+        if len(self.messages) <= max_messages and estimated_tokens < (self.max_tokens_per_task * 0.7):
+            return
+
+        if self.verbose:
+            logger.info(
+                f"Managing context window: {len(self.messages)} messages, "
+                f"~{estimated_tokens} tokens"
+            )
+
+        # Strategy: Keep system (0), user (1), and last N messages
+        system_msg = self.messages[0]
+        user_msg = self.messages[1]
+        conversation = self.messages[2:]
+
+        # Keep only last N conversation messages
+        keep_last_n = self.max_context_messages
+        if len(conversation) > keep_last_n:
+            truncated = conversation[-keep_last_n:]
+            if self.verbose:
+                logger.info(
+                    f"Truncated conversation from {len(conversation)} to {len(truncated)} messages"
+                )
+            conversation = truncated
+
+        # Rebuild messages list
+        self.messages = [system_msg, user_msg] + conversation
+
+        # Truncate long tool results
+        self._truncate_tool_results()
+
+    def _estimate_context_tokens(self) -> int:
+        """Estimate total tokens in current context.
+
+        Returns:
+            Estimated token count
+        """
+        total = 0
+        for msg in self.messages:
+            content = msg.get("content", "")
+            if content:
+                total += GroqClient.count_tokens_estimate(str(content))
+
+            # Add tokens for tool calls
+            if "tool_calls" in msg:
+                for tool_call in msg["tool_calls"]:
+                    total += 50  # Rough estimate for tool call structure
+
+        return total
+
+    def _truncate_tool_results(self, max_length: int = 500) -> None:
+        """Truncate long tool results to prevent context overflow.
+
+        Args:
+            max_length: Maximum length for tool result content
+        """
+        for msg in self.messages:
+            if msg.get("role") == "tool":
+                content = msg.get("content", "")
+                if len(content) > max_length:
+                    # Truncate and add indicator
+                    truncated = content[:max_length] + f"\n\n[...truncated {len(content) - max_length} chars]"
+                    msg["content"] = truncated
 
     def run_with_learning(self, user_input: str) -> str:
         """Run with learning system integration (deprecated - use run with enable_memory=True).
@@ -445,7 +554,11 @@ class FunctionOrchestrator:
             "total_iterations": self.total_iterations,
             "total_tool_calls": self.total_tool_calls,
             "messages_in_history": len(self.messages),
-            "functions_available": len(self.functions)
+            "functions_available": len(self.functions),
+            "total_tokens_used": self.total_tokens_used,
+            "current_token_usage": self.current_token_usage,
+            "estimated_context_tokens": self._estimate_context_tokens(),
+            "token_budget_remaining": max(0, self.max_tokens_per_task - self.current_token_usage)
         }
 
     def reset(self):
@@ -453,6 +566,9 @@ class FunctionOrchestrator:
         self.messages = []
         self.total_iterations = 0
         self.total_tool_calls = 0
+        self.total_tokens_used = 0
+        self.current_token_usage = 0
+        self.tools_executed = []
 
         if self.verbose:
             print("🔄 Orchestrator reset\n")
