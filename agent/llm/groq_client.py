@@ -2,7 +2,8 @@
 
 import os
 import time
-from typing import Optional, Dict, Any, List, Generator
+import json
+from typing import Optional, Dict, Any, List, Generator, Union
 from groq import Groq
 from config.settings import settings
 
@@ -174,6 +175,125 @@ class GroqClient:
             **kwargs
         )
         return response["content"]
+
+    def chat_with_functions(
+        self,
+        messages: List[Dict[str, str]],
+        functions: List[Dict[str, Any]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        tool_choice: str = "auto",
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Chat with function calling support (Claude-like).
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            functions: List of function definitions (OpenAI format)
+            model: Model to use (defaults to default_model)
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens in response
+            tool_choice: "auto", "required", or "none"
+            **kwargs: Additional arguments
+
+        Returns:
+            Response dict with:
+            - content: Text response (if any)
+            - tool_calls: List of tool calls (if any)
+            - usage: Token usage stats
+            - finish_reason: Why generation stopped
+        """
+        model = model or self.default_model
+
+        try:
+            # Convert function definitions to Groq tools format
+            tools = functions  # Groq uses same format as OpenAI
+
+            # Prepare API call parameters
+            api_params = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "tools": tools,
+            }
+
+            # Add tool_choice if specified
+            if tool_choice != "auto":
+                api_params["tool_choice"] = tool_choice
+
+            # Add any extra kwargs
+            api_params.update(kwargs)
+
+            response = self.client.chat.completions.create(**api_params)
+
+            # Track token usage
+            usage = response.usage
+            self.prompt_tokens += usage.prompt_tokens
+            self.completion_tokens += usage.completion_tokens
+            self.total_tokens += usage.total_tokens
+
+            message = response.choices[0].message
+
+            # Parse response
+            result = {
+                "content": message.content,
+                "model": model,
+                "usage": {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                },
+                "finish_reason": response.choices[0].finish_reason,
+                "tool_calls": None
+            }
+
+            # Extract tool calls if present
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                tool_calls = []
+                for tool_call in message.tool_calls:
+                    tool_calls.append({
+                        "id": tool_call.id,
+                        "type": tool_call.type,
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments  # JSON string
+                        }
+                    })
+                result["tool_calls"] = tool_calls
+
+            return result
+
+        except Exception as e:
+            raise RuntimeError(f"Groq function calling error: {str(e)}") from e
+
+    def parse_function_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse function call from tool_calls response.
+
+        Args:
+            tool_call: Single tool call dict from response
+
+        Returns:
+            Dict with:
+            - function_name: Name of function to call
+            - arguments: Parsed arguments dict
+            - call_id: Tool call ID for response
+        """
+        function_name = tool_call["function"]["name"]
+        arguments_str = tool_call["function"]["arguments"]
+
+        try:
+            arguments = json.loads(arguments_str)
+        except json.JSONDecodeError as e:
+            # Fallback: return raw string
+            arguments = {"raw": arguments_str}
+
+        return {
+            "function_name": function_name,
+            "arguments": arguments,
+            "call_id": tool_call["id"]
+        }
 
     def get_token_stats(self) -> Dict[str, int]:
         """Get cumulative token usage statistics.

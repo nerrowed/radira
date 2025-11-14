@@ -13,13 +13,9 @@ from agent.llm.groq_client import get_groq_client
 from agent.tools.registry import get_registry
 from config.settings import settings
 
-# Import orchestrator based on settings
-if settings.use_dual_orchestrator:
-    from agent.core.dual_orchestrator import DualOrchestrator as AgentOrchestrator
-    ORCHESTRATOR_TYPE = "Dual Orchestrator (Anti-Looping)"
-else:
-    from agent.core.orchestrator import AgentOrchestrator
-    ORCHESTRATOR_TYPE = "Classic Orchestrator"
+# Orchestrator selection (will be set by command line args)
+AgentOrchestrator = None
+ORCHESTRATOR_TYPE = None
 from agent.tools.filesystem import FileSystemTool
 from agent.tools.terminal import TerminalTool
 from agent.tools.web_generator import WebGeneratorTool
@@ -37,6 +33,28 @@ logging.basicConfig(
     handlers=[RichHandler(rich_tracebacks=True, console=console)]
 )
 logger = logging.getLogger(__name__)
+
+
+def select_orchestrator(use_function_calling: bool = False):
+    """Select orchestrator type.
+
+    Args:
+        use_function_calling: Use function calling (Claude-like) mode
+    """
+    global AgentOrchestrator, ORCHESTRATOR_TYPE
+
+    if use_function_calling:
+        from agent.core.function_orchestrator import FunctionOrchestrator
+        AgentOrchestrator = FunctionOrchestrator
+        ORCHESTRATOR_TYPE = "Function Calling (Claude-like) 🤖"
+    elif settings.use_dual_orchestrator:
+        from agent.core.dual_orchestrator import DualOrchestrator
+        AgentOrchestrator = DualOrchestrator
+        ORCHESTRATOR_TYPE = "Dual Orchestrator (Anti-Looping)"
+    else:
+        from agent.core.orchestrator import AgentOrchestrator as ClassicOrchestrator
+        AgentOrchestrator = ClassicOrchestrator
+        ORCHESTRATOR_TYPE = "Classic Orchestrator"
 
 
 def setup_tools():
@@ -93,15 +111,32 @@ def print_config():
     console.print(Panel(config_info, title="Settings", border_style="green"))
 
 
-def run_interactive():
-    """Run agent in interactive mode."""
+def run_interactive(use_function_calling: bool = False, enable_memory: bool = False, confirmation_mode: str = "auto"):
+    """Run agent in interactive mode.
+
+    Args:
+        use_function_calling: Use function calling mode
+        enable_memory: Enable ChromaDB semantic memory
+        confirmation_mode: Confirmation mode (yes/no/auto)
+    """
+    select_orchestrator(use_function_calling)
     print_banner()
     print_config()
 
     # Setup
     try:
         registry = setup_tools()
-        agent = AgentOrchestrator(verbose=True)
+
+        # Pass memory and confirmation settings if function calling
+        if use_function_calling:
+            agent = AgentOrchestrator(
+                verbose=True,
+                enable_memory=enable_memory,
+                confirmation_mode=confirmation_mode
+            )
+        else:
+            agent = AgentOrchestrator(verbose=True)
+
         console.print("\n✓ Agent initialized successfully!", style="bold green")
         console.print(f"✓ Loaded {len(registry)} tools\n", style="bold green")
     except Exception as e:
@@ -165,13 +200,30 @@ def run_interactive():
             logger.exception("Unexpected error")
 
 
-def run_single_task(task: str):
-    """Run a single task and exit."""
+def run_single_task(task: str, use_function_calling: bool = False, enable_memory: bool = False, confirmation_mode: str = "auto"):
+    """Run a single task and exit.
+
+    Args:
+        task: Task to execute
+        use_function_calling: Use function calling mode
+        enable_memory: Enable ChromaDB semantic memory
+        confirmation_mode: Confirmation mode (yes/no/auto)
+    """
+    select_orchestrator(use_function_calling)
     console.print(f"[bold]Task:[/bold] {task}\n")
 
     try:
         registry = setup_tools()
-        agent = AgentOrchestrator(verbose=True)
+
+        # Pass memory and confirmation settings if function calling
+        if use_function_calling:
+            agent = AgentOrchestrator(
+                verbose=True,
+                enable_memory=enable_memory,
+                confirmation_mode=confirmation_mode
+            )
+        else:
+            agent = AgentOrchestrator(verbose=True)
     except Exception as e:
         console.print(f"[bold red]Failed to initialize:[/bold red] {e}")
         sys.exit(1)
@@ -281,6 +333,22 @@ def main():
         "--working-dir",
         help="Working directory (default from config)"
     )
+    parser.add_argument(
+        "--function-calling", "--fc",
+        action="store_true",
+        help="Use Function Calling mode (Claude-like, no regex classification)"
+    )
+    parser.add_argument(
+        "--memory", "-m",
+        action="store_true",
+        help="Enable semantic memory with ChromaDB (learn from past experiences)"
+    )
+    parser.add_argument(
+        "--confirm",
+        choices=["yes", "no", "auto"],
+        default="auto",
+        help="Confirmation mode: yes (always execute), no (always ask), auto (smart decision)"
+    )
 
     args = parser.parse_args()
 
@@ -294,14 +362,31 @@ def main():
     if args.working_dir:
         settings.working_directory = args.working_dir
 
+    # Show mode info
+    if args.function_calling:
+        console.print("\n[bold green]🤖 Function Calling Mode (Claude-like)[/bold green]")
+        console.print("   Pure LLM reasoning - no regex classification")
+        if args.memory:
+            console.print("   📚 Semantic memory: ENABLED")
+        console.print(f"   ⚙️  Confirmation mode: {args.confirm}\n")
+
     # Run mode
     if args.task:
         # Single task mode
         task = " ".join(args.task)
-        run_single_task(task)
+        run_single_task(
+            task,
+            use_function_calling=args.function_calling,
+            enable_memory=args.memory,
+            confirmation_mode=args.confirm
+        )
     else:
         # Interactive mode
-        run_interactive()
+        run_interactive(
+            use_function_calling=args.function_calling,
+            enable_memory=args.memory,
+            confirmation_mode=args.confirm
+        )
 
 
 if __name__ == "__main__":

@@ -62,7 +62,7 @@ class WebGeneratorTool(BaseTool):
                 "required": False
             },
             "features": {
-                "type": "list",
+                "type": "array",
                 "description": "List of specific features to include",
                 "required": False
             }

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(cat:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(python main.py:*)"
     ],
     "deny": [],
     "ask": []
