@@ -10,6 +10,7 @@ langchain-groq==0.0.3  # Pinned for stability
 # Core - Environment & Config
 python-dotenv==1.0.1  # Pinned for stability
 pydantic==2.6.1  # Required for settings validation
+pydantic-settings==2.1.0  # Required for BaseSettings (Pydantic v2)
 
 # Core - Beautiful CLI Output
 rich==13.7.0  # Pinned for stability
