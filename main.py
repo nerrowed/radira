@@ -19,6 +19,7 @@ ORCHESTRATOR_TYPE = None
 from agent.tools.filesystem import FileSystemTool
 from agent.tools.terminal import TerminalTool
 from agent.tools.web_generator import WebGeneratorTool
+from agent.tools.code_generator import CodeGeneratorTool
 from agent.tools.web_search import WebSearchTool
 from agent.tools.pentest import PentestTool
 from agent.utils.workspace import setup_workspace
@@ -70,6 +71,7 @@ def setup_tools():
         FileSystemTool(working_directory=settings.working_directory),
         TerminalTool(working_directory=settings.working_directory),
         WebGeneratorTool(output_directory=settings.working_directory),
+        CodeGeneratorTool(output_directory=settings.working_directory),
         WebSearchTool(max_results=5),
         PentestTool(working_directory=settings.working_directory)
     ]
@@ -261,9 +263,10 @@ def print_help():
     • "Generate a React todo app"
 
     [cyan]Tools Available:[/cyan]
-    • file_system  - Read, write, list files
-    • terminal     - Execute shell commands
-    • web_generator - Generate web applications
+    • file_system    - Read, write, list files
+    • terminal       - Execute shell commands
+    • web_generator  - Generate web applications
+    • code_generator - Generate code in various languages (C, C++, Python, Java, Rust, Go, etc.)
     """
     console.print(Panel(help_text, border_style="yellow"))
 
