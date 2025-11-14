@@ -29,7 +29,8 @@ class ConfirmationManager:
         "terminal": [],  # All terminal commands need confirmation
         "web_search": ["search"],  # Read-only
         "pentest": [],  # All pentest needs confirmation
-        "web_generator": []  # All generation needs confirmation
+        "web_generator": [],  # All generation needs confirmation
+        "code_generator": []  # All code generation needs confirmation
     }
 
     # Operations that are considered dangerous
@@ -37,6 +38,7 @@ class ConfirmationManager:
         "file_system": ["write", "delete", "mkdir"],
         "terminal": ["*"],  # All terminal commands
         "web_generator": ["*"],  # All web generation
+        "code_generator": ["*"],  # All code generation
         "pentest": ["*"]  # All pentest operations
     }
 

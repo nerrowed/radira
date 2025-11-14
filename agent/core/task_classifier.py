@@ -61,10 +61,12 @@ class TaskClassifier:
     CODE_GEN_PATTERNS = [
         r'\b(buat|create|generate)\b.*\b(code|program|script|function)\b',
         r'\b(buatkan|buat)\b.*\b(aplikasi|app|kalkulator|calculator|program|skrip)\b',
-        r'\b(buatkan|buat)\b.*\.py\b',  # Python files
-        r'\b(implement|implementasi)\b.*\b(algorithm|function|class)\b',
+        r'\b(buatkan|buat)\b.*\.(py|c|cpp|java|rs|go|js|ts|rb|php|swift|kt)\b',  # Various file extensions
+        r'\b(implement|implementasi)\b.*\b(algorithm|function|class|struktur data|data structure)\b',
         r'\b(fix|perbaiki)\b.*\b(bug|error|issue)\b',
-        r'\b(tulis|write)\b.*\b(python|javascript|java|c\+\+|rust|go)\b',
+        r'\b(tulis|write|generate)\b.*\b(python|javascript|java|c\+\+|cpp|rust|go|c|csharp|ruby|php|swift|kotlin)\b',
+        r'\b(kode|code)\b.*\b(python|c|cpp|java|rust|go|javascript|typescript)\b',
+        r'\b(binary search|linked list|sorting|algorithm|struktur data)\b',
     ]
 
     WEB_GEN_PATTERNS = [
@@ -168,7 +170,7 @@ class TaskClassifier:
             TaskType.SIMPLE_QA: [],  # Direct LLM
             TaskType.FILE_OPERATION: ["file_system"],
             TaskType.WEB_SEARCH: ["web_search"],
-            TaskType.CODE_GENERATION: ["file_system", "terminal"],
+            TaskType.CODE_GENERATION: ["code_generator", "file_system", "terminal"],
             TaskType.WEB_GENERATION: ["web_generator", "file_system"],
             TaskType.PENTEST: ["pentest", "terminal", "file_system"],
             TaskType.TERMINAL_COMMAND: ["terminal"],
