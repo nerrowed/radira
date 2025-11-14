@@ -415,6 +415,7 @@ class GroqClient:
             - tool_calls: List of tool calls (if any)
             - usage: Token usage stats
             - finish_reason: Why generation stopped
+            - failed_generation: If tool_use_failed, contains the partial text response
 
         Raises:
             LLMAPIError: If API call fails
@@ -490,6 +491,88 @@ class GroqClient:
         except (LLMAPIError, LLMTimeoutError, RateLimitError):
             raise
         except Exception as e:
+            # Special handling for tool_use_failed error
+            error_str = str(e)
+            if "tool_use_failed" in error_str and "failed_generation" in error_str:
+                logger.warning(f"Tool use failed, LLM generated text instead of calling function")
+
+                # Try to extract failed_generation content from error
+                try:
+                    import re
+                    import json as json_module
+
+                    # Try to extract as JSON first
+                    # Look for the error dict in the string
+                    json_match = re.search(r'\{[^}]*"error":\s*\{[^}]*"failed_generation":', error_str)
+                    if json_match:
+                        # Try to find complete JSON object
+                        start_idx = error_str.find("{'error':")
+                        if start_idx == -1:
+                            start_idx = error_str.find('{"error":')
+
+                        if start_idx != -1:
+                            # Find matching brace
+                            brace_count = 0
+                            end_idx = start_idx
+                            for i in range(start_idx, len(error_str)):
+                                if error_str[i] == '{':
+                                    brace_count += 1
+                                elif error_str[i] == '}':
+                                    brace_count -= 1
+                                    if brace_count == 0:
+                                        end_idx = i + 1
+                                        break
+
+                            if end_idx > start_idx:
+                                try:
+                                    # Try to parse as JSON
+                                    json_str = error_str[start_idx:end_idx].replace("'", '"')
+                                    error_dict = json_module.loads(json_str)
+                                    failed_content = error_dict.get('error', {}).get('failed_generation', '')
+
+                                    if failed_content:
+                                        logger.info(f"Extracted failed_generation via JSON ({len(failed_content)} chars)")
+                                        return {
+                                            "content": failed_content,
+                                            "model": model,
+                                            "usage": {
+                                                "prompt_tokens": 0,
+                                                "completion_tokens": 0,
+                                                "total_tokens": 0,
+                                            },
+                                            "finish_reason": "tool_use_failed",
+                                            "tool_calls": None,
+                                            "failed_generation": True
+                                        }
+                                except json_module.JSONDecodeError:
+                                    pass
+
+                    # Fallback: regex extraction
+                    match = re.search(r"'failed_generation':\s*'([^']+(?:\\'[^']*)*)'", error_str)
+                    if not match:
+                        match = re.search(r'"failed_generation":\s*"([^"]+(?:\\"[^"]*)*)"', error_str)
+
+                    if match:
+                        failed_content = match.group(1)
+                        # Unescape newlines and quotes
+                        failed_content = failed_content.replace('\\n', '\n').replace("\\'", "'").replace('\\"', '"')
+
+                        logger.info(f"Extracted failed_generation via regex ({len(failed_content)} chars)")
+                        return {
+                            "content": failed_content,
+                            "model": model,
+                            "usage": {
+                                "prompt_tokens": 0,
+                                "completion_tokens": 0,
+                                "total_tokens": 0,
+                            },
+                            "finish_reason": "tool_use_failed",
+                            "tool_calls": None,
+                            "failed_generation": True
+                        }
+                except Exception as parse_error:
+                    logger.warning(f"Failed to parse failed_generation: {parse_error}")
+
             raise LLMAPIError(f"Function calling error: {str(e)}") from e
 
     def parse_function_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
