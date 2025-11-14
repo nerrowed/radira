@@ -184,6 +184,9 @@ class FunctionOrchestrator:
             # Check if LLM wants to call tools
             tool_calls = response.get("tool_calls")
 
+            # Check if this was a failed_generation fallback
+            is_failed_generation = response.get("failed_generation", False)
+
             if tool_calls:
                 # LLM wants to use tools
                 if self.verbose:
@@ -202,6 +205,16 @@ class FunctionOrchestrator:
 
                 # Continue loop to get next LLM response
                 continue
+
+            elif is_failed_generation and response.get("content"):
+                # LLM failed to call function, but we recovered partial response
+                # This is a fallback - warn but return the content
+                if self.verbose:
+                    print(f"\n⚠️  LLM generated text instead of calling function (fallback mode)")
+                    print(f"   Returning partial response...")
+
+                final_content = response.get("content")
+                return final_content or "Task completed (with fallback)."
 
             else:
                 # LLM returned final response (no more tools)
