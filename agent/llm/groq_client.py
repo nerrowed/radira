@@ -1,28 +1,105 @@
-"""Groq API client wrapper for LLM interactions."""
+"""Groq API client wrapper with retry mechanism and rate limiting."""
 
 import os
 import time
 import json
-from typing import Optional, Dict, Any, List, Generator, Union
+import logging
+from typing import Optional, Dict, Any, List, Generator
+from datetime import datetime, timedelta
+from collections import deque
 from groq import Groq
 from config.settings import settings
 
+# Import custom exceptions
+from agent.core.exceptions import (
+    LLMAPIError,
+    LLMTimeoutError,
+    RateLimitError,
+    TokenLimitExceededError,
+    LLMResponseError
+)
+
+logger = logging.getLogger(__name__)
+
+
+class RateLimiter:
+    """Sliding window rate limiter for API requests."""
+
+    def __init__(self, max_requests: int, time_window_seconds: int = 60):
+        """Initialize rate limiter.
+
+        Args:
+            max_requests: Maximum requests allowed in time window
+            time_window_seconds: Time window in seconds (default: 60)
+        """
+        self.max_requests = max_requests
+        self.time_window = timedelta(seconds=time_window_seconds)
+        self.requests: deque = deque()  # Store request timestamps
+
+    def acquire(self) -> bool:
+        """Try to acquire a request slot.
+
+        Returns:
+            True if request is allowed, False if rate limited
+        """
+        now = datetime.now()
+
+        # Remove old requests outside time window
+        while self.requests and (now - self.requests[0]) > self.time_window:
+            self.requests.popleft()
+
+        # Check if we can make a new request
+        if len(self.requests) < self.max_requests:
+            self.requests.append(now)
+            return True
+
+        return False
+
+    def wait_time(self) -> float:
+        """Get wait time in seconds until next request is allowed.
+
+        Returns:
+            Seconds to wait (0 if request is allowed now)
+        """
+        if len(self.requests) < self.max_requests:
+            return 0.0
+
+        # Calculate when oldest request will expire
+        now = datetime.now()
+        oldest = self.requests[0]
+        expires_at = oldest + self.time_window
+        wait_seconds = (expires_at - now).total_seconds()
+
+        return max(0.0, wait_seconds)
+
+    def reset(self):
+        """Reset rate limiter."""
+        self.requests.clear()
+
 
 class GroqClient:
-    """Wrapper for Groq API with support for multiple models and streaming."""
+    """Wrapper for Groq API with retry mechanism, rate limiting, and better error handling."""
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         default_model: Optional[str] = None,
         fast_model: Optional[str] = None,
+        max_retries: Optional[int] = None,
+        retry_delay: Optional[float] = None,
+        timeout: Optional[int] = None,
+        rate_limit_rpm: Optional[int] = None,
     ):
-        """Initialize Groq client.
+        """Initialize Groq client with retry and rate limiting.
 
         Args:
             api_key: Groq API key (defaults to GROQ_API_KEY env var)
-            default_model: Default model to use (defaults to llama-3.1-70b-versatile)
-            fast_model: Fast model for simple tasks (defaults to gemma2-9b-it)
+            default_model: Default model to use
+            fast_model: Fast model for simple tasks
+            max_retries: Maximum retry attempts (defaults to settings)
+            retry_delay: Initial retry delay in seconds (defaults to settings)
+            timeout: Request timeout in seconds (defaults to settings)
+            rate_limit_rpm: Rate limit in requests per minute (defaults to settings)
         """
         self.api_key = api_key or settings.groq_api_key
         if not self.api_key or self.api_key == "your_groq_api_key_here":
@@ -34,10 +111,123 @@ class GroqClient:
         self.default_model = default_model or settings.groq_model
         self.fast_model = fast_model or getattr(settings, 'groq_fast_model', 'gemma2-9b-it')
 
+        # Retry configuration
+        self.max_retries = max_retries if max_retries is not None else settings.api_max_retries
+        self.retry_delay = retry_delay if retry_delay is not None else settings.api_retry_delay
+        self.timeout = timeout if timeout is not None else settings.api_timeout_seconds
+
+        # Rate limiting
+        rate_limit = rate_limit_rpm if rate_limit_rpm is not None else settings.rate_limit_requests_per_minute
+        self.rate_limiter = RateLimiter(max_requests=rate_limit, time_window_seconds=60)
+
         # Token tracking
         self.total_tokens = 0
         self.prompt_tokens = 0
         self.completion_tokens = 0
+
+        # Statistics
+        self.total_requests = 0
+        self.failed_requests = 0
+        self.retried_requests = 0
+
+        logger.info(
+            f"GroqClient initialized - Model: {self.default_model}, "
+            f"Max Retries: {self.max_retries}, Timeout: {self.timeout}s, "
+            f"Rate Limit: {rate_limit} req/min"
+        )
+
+    def _execute_with_retry(self, func, *args, **kwargs) -> Any:
+        """Execute function with exponential backoff retry.
+
+        Args:
+            func: Function to execute
+            *args: Positional arguments for func
+            **kwargs: Keyword arguments for func
+
+        Returns:
+            Function result
+
+        Raises:
+            LLMAPIError: If all retries failed
+            RateLimitError: If rate limited
+            LLMTimeoutError: If request timed out
+        """
+        last_exception = None
+        retry_count = 0
+
+        while retry_count <= self.max_retries:
+            try:
+                # Check rate limit
+                if not self.rate_limiter.acquire():
+                    wait_time = self.rate_limiter.wait_time()
+                    logger.warning(
+                        f"Rate limit reached. Waiting {wait_time:.2f}s before retry..."
+                    )
+                    raise RateLimitError(
+                        f"Rate limit exceeded. Wait {wait_time:.2f}s",
+                        retry_after=int(wait_time) + 1
+                    )
+
+                # Execute the function
+                self.total_requests += 1
+                result = func(*args, **kwargs)
+
+                # Log retry success if this was a retry
+                if retry_count > 0:
+                    logger.info(f"Request succeeded after {retry_count} retries")
+
+                return result
+
+            except RateLimitError:
+                # Don't retry rate limit errors, just raise
+                raise
+
+            except Exception as e:
+                last_exception = e
+                self.failed_requests += 1
+
+                # Check if error is retryable
+                is_timeout = "timeout" in str(e).lower()
+                is_network = any(
+                    keyword in str(e).lower()
+                    for keyword in ["connection", "network", "unavailable"]
+                )
+                is_retryable = is_timeout or is_network
+
+                if not is_retryable or retry_count >= self.max_retries:
+                    # Not retryable or max retries reached
+                    logger.error(
+                        f"Request failed: {e} (retries: {retry_count}/{self.max_retries})"
+                    )
+
+                    # Wrap in appropriate exception
+                    if is_timeout:
+                        raise LLMTimeoutError(
+                            f"Request timed out after {self.timeout}s",
+                            details={"original_error": str(e)}
+                        ) from e
+                    else:
+                        raise LLMAPIError(
+                            f"Groq API error: {str(e)}",
+                            details={"retry_count": retry_count}
+                        ) from e
+
+                # Calculate exponential backoff delay
+                delay = self.retry_delay * (2 ** retry_count)
+                logger.warning(
+                    f"Request failed: {e}. Retrying in {delay:.2f}s... "
+                    f"(attempt {retry_count + 1}/{self.max_retries})"
+                )
+
+                time.sleep(delay)
+                retry_count += 1
+                self.retried_requests += 1
+
+        # Should not reach here, but just in case
+        raise LLMAPIError(
+            f"Request failed after {retry_count} retries",
+            details={"last_error": str(last_exception)}
+        )
 
     def chat(
         self,
@@ -48,7 +238,7 @@ class GroqClient:
         stream: bool = False,
         **kwargs
     ) -> Dict[str, Any]:
-        """Send chat completion request to Groq API.
+        """Send chat completion request to Groq API with retry.
 
         Args:
             messages: List of message dicts with 'role' and 'content'
@@ -60,6 +250,11 @@ class GroqClient:
 
         Returns:
             Response dict with 'content', 'usage', etc.
+
+        Raises:
+            LLMAPIError: If API call fails
+            LLMTimeoutError: If request times out
+            RateLimitError: If rate limited
         """
         model = model or self.default_model
 
@@ -73,13 +268,20 @@ class GroqClient:
                     **kwargs
                 )
 
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs
-            )
+            def _make_request():
+                """Inner function for retry wrapper."""
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=self.timeout,
+                    **kwargs
+                )
+                return response
+
+            # Execute with retry
+            response = self._execute_with_retry(_make_request)
 
             # Track token usage
             usage = response.usage
@@ -98,8 +300,11 @@ class GroqClient:
                 "finish_reason": response.choices[0].finish_reason,
             }
 
+        except (LLMAPIError, LLMTimeoutError, RateLimitError):
+            # Re-raise our custom exceptions
+            raise
         except Exception as e:
-            raise RuntimeError(f"Groq API error: {str(e)}") from e
+            raise LLMAPIError(f"Unexpected error in chat: {str(e)}") from e
 
     def _chat_stream(
         self,
@@ -115,21 +320,28 @@ class GroqClient:
             Content chunks as they arrive
         """
         try:
-            stream = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-                **kwargs
-            )
+            def _make_stream():
+                """Inner function for creating stream."""
+                return self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=True,
+                    timeout=self.timeout,
+                    **kwargs
+                )
+
+            stream = self._execute_with_retry(_make_stream)
 
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
 
+        except (LLMAPIError, LLMTimeoutError, RateLimitError):
+            raise
         except Exception as e:
-            raise RuntimeError(f"Groq API streaming error: {str(e)}") from e
+            raise LLMAPIError(f"Streaming error: {str(e)}") from e
 
     def chat_with_system(
         self,
@@ -186,7 +398,7 @@ class GroqClient:
         tool_choice: str = "auto",
         **kwargs
     ) -> Dict[str, Any]:
-        """Chat with function calling support (Claude-like).
+        """Chat with function calling support (Claude-like) with retry.
 
         Args:
             messages: List of message dicts with 'role' and 'content'
@@ -203,6 +415,10 @@ class GroqClient:
             - tool_calls: List of tool calls (if any)
             - usage: Token usage stats
             - finish_reason: Why generation stopped
+
+        Raises:
+            LLMAPIError: If API call fails
+            LLMResponseError: If response parsing fails
         """
         model = model or self.default_model
 
@@ -217,6 +433,7 @@ class GroqClient:
                 "temperature": temperature,
                 "max_tokens": max_tokens,
                 "tools": tools,
+                "timeout": self.timeout,
             }
 
             # Add tool_choice if specified
@@ -226,7 +443,12 @@ class GroqClient:
             # Add any extra kwargs
             api_params.update(kwargs)
 
-            response = self.client.chat.completions.create(**api_params)
+            def _make_request():
+                """Inner function for retry wrapper."""
+                return self.client.chat.completions.create(**api_params)
+
+            # Execute with retry
+            response = self._execute_with_retry(_make_request)
 
             # Track token usage
             usage = response.usage
@@ -265,8 +487,10 @@ class GroqClient:
 
             return result
 
+        except (LLMAPIError, LLMTimeoutError, RateLimitError):
+            raise
         except Exception as e:
-            raise RuntimeError(f"Groq function calling error: {str(e)}") from e
+            raise LLMAPIError(f"Function calling error: {str(e)}") from e
 
     def parse_function_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         """Parse function call from tool_calls response.
@@ -279,21 +503,32 @@ class GroqClient:
             - function_name: Name of function to call
             - arguments: Parsed arguments dict
             - call_id: Tool call ID for response
+
+        Raises:
+            LLMResponseError: If parsing fails
         """
-        function_name = tool_call["function"]["name"]
-        arguments_str = tool_call["function"]["arguments"]
-
         try:
-            arguments = json.loads(arguments_str)
-        except json.JSONDecodeError as e:
-            # Fallback: return raw string
-            arguments = {"raw": arguments_str}
+            function_name = tool_call["function"]["name"]
+            arguments_str = tool_call["function"]["arguments"]
 
-        return {
-            "function_name": function_name,
-            "arguments": arguments,
-            "call_id": tool_call["id"]
-        }
+            try:
+                arguments = json.loads(arguments_str)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse function arguments: {e}")
+                # Fallback: return raw string
+                arguments = {"raw": arguments_str}
+
+            return {
+                "function_name": function_name,
+                "arguments": arguments,
+                "call_id": tool_call["id"]
+            }
+
+        except KeyError as e:
+            raise LLMResponseError(
+                f"Invalid tool call format: missing key {e}",
+                details={"tool_call": tool_call}
+            )
 
     def get_token_stats(self) -> Dict[str, int]:
         """Get cumulative token usage statistics.
@@ -307,15 +542,42 @@ class GroqClient:
             "total_tokens": self.total_tokens,
         }
 
+    def get_request_stats(self) -> Dict[str, int]:
+        """Get request statistics.
+
+        Returns:
+            Dict with request counts and success rate
+        """
+        success_rate = (
+            (self.total_requests - self.failed_requests) / self.total_requests * 100
+            if self.total_requests > 0 else 0.0
+        )
+
+        return {
+            "total_requests": self.total_requests,
+            "failed_requests": self.failed_requests,
+            "retried_requests": self.retried_requests,
+            "success_rate": success_rate,
+        }
+
     def reset_token_stats(self):
         """Reset token usage counters."""
         self.total_tokens = 0
         self.prompt_tokens = 0
         self.completion_tokens = 0
 
+    def reset_request_stats(self):
+        """Reset request statistics."""
+        self.total_requests = 0
+        self.failed_requests = 0
+        self.retried_requests = 0
+
     @staticmethod
     def count_tokens_estimate(text: str) -> int:
         """Rough estimate of token count.
+
+        Note: This is a simple heuristic. For accurate counting,
+        use tiktoken library with the appropriate model tokenizer.
 
         Args:
             text: Text to estimate
@@ -334,7 +596,8 @@ class GroqClient:
         try:
             response = self.quick_chat("test", max_tokens=5)
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Groq API availability check failed: {e}")
             return False
 
 

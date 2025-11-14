@@ -1,7 +1,8 @@
 """Tool registry for managing available tools."""
 
 from typing import Dict, List, Optional, Type
-from .base import BaseTool, ToolNotFoundError, ToolResult
+from .base import BaseTool, ToolResult
+from agent.core.exceptions import ToolNotFoundError
 import logging
 
 logger = logging.getLogger(__name__)

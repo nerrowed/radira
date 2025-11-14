@@ -6,6 +6,16 @@ from dataclasses import dataclass
 from enum import Enum
 import time
 
+# Import centralized exceptions
+from agent.core.exceptions import (
+    ToolError,
+    ToolValidationError,
+    ToolExecutionError,
+    ToolNotFoundError,
+    ToolTimeoutError,
+    ToolPermissionError
+)
+
 
 class ToolStatus(Enum):
     """Status of tool execution."""
@@ -234,21 +244,5 @@ class BaseTool(ABC):
         return f"<{self.__class__.__name__}(name='{self.name}', category='{self.category}')>"
 
 
-class ToolError(Exception):
-    """Base exception for tool errors."""
-    pass
-
-
-class ToolValidationError(ToolError):
-    """Exception for tool input validation errors."""
-    pass
-
-
-class ToolExecutionError(ToolError):
-    """Exception for tool execution errors."""
-    pass
-
-
-class ToolNotFoundError(ToolError):
-    """Exception when tool is not found in registry."""
-    pass
+# Note: Tool exceptions are now imported from agent.core.exceptions
+# This ensures consistency across the entire codebase
