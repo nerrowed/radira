@@ -76,13 +76,13 @@ class CodeGeneratorTool(BaseTool):
                 "required": False
             },
             "include_tests": {
-                "type": "boolean",
-                "description": "Whether to include test code",
+                "type": "string",
+                "description": "Whether to include test code (true/false)",
                 "required": False
             },
             "include_docs": {
-                "type": "boolean",
-                "description": "Whether to include documentation/comments",
+                "type": "string",
+                "description": "Whether to include documentation/comments (true/false)",
                 "required": False
             }
         }
@@ -117,8 +117,13 @@ class CodeGeneratorTool(BaseTool):
         language = kwargs.get("language", "").lower()
         filename = kwargs.get("filename", "main")
         features = kwargs.get("features", [])
-        include_tests = kwargs.get("include_tests", False)
-        include_docs = kwargs.get("include_docs", True)
+
+        # Parse boolean parameters (can be string "true"/"false" or actual boolean)
+        include_tests_raw = kwargs.get("include_tests", False)
+        include_docs_raw = kwargs.get("include_docs", True)
+
+        include_tests = self._parse_bool(include_tests_raw, default=False)
+        include_docs = self._parse_bool(include_docs_raw, default=True)
 
         if not description:
             return ToolResult(
@@ -443,6 +448,22 @@ go 1.21
             logger.warning(f"Failed to generate additional files: {e}")
 
         return additional_files
+
+    def _parse_bool(self, value: Any, default: bool = False) -> bool:
+        """Parse boolean value from string or bool.
+
+        Args:
+            value: Value to parse (can be bool, string, or other)
+            default: Default value if parsing fails
+
+        Returns:
+            Boolean value
+        """
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ('true', '1', 'yes', 'y')
+        return default
 
     @property
     def is_dangerous(self) -> bool:
