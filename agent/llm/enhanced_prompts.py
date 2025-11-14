@@ -214,3 +214,314 @@ Before you execute this action, verify:
 
 If ANY answer is concerning → STOP and report issue instead!
 """
+
+
+# ==================== SEMANTIC RETRIEVAL INTEGRATION ====================
+
+
+def create_context_enriched_prompt(
+    task: str,
+    retrieved_memories: Optional[List] = None,
+    retrieved_lessons: Optional[List] = None,
+    retrieved_strategies: Optional[List] = None,
+    error_warnings: Optional[List[str]] = None
+) -> str:
+    """Create prompt enriched with semantic retrieval results.
+
+    Args:
+        task: Current task
+        retrieved_memories: Similar past experiences from ChromaDB
+        retrieved_lessons: Relevant lessons learned
+        retrieved_strategies: Proven strategies
+        error_warnings: Error prevention warnings
+
+    Returns:
+        Enriched prompt with context
+    """
+    prompt_parts = []
+
+    # Header
+    prompt_parts.append("="*60)
+    prompt_parts.append("SEMANTIC CONTEXT FROM PAST EXPERIENCES")
+    prompt_parts.append("="*60)
+    prompt_parts.append("")
+
+    # Add retrieved memories
+    if retrieved_memories and len(retrieved_memories) > 0:
+        prompt_parts.append("📚 PENGALAMAN MASA LALU YANG RELEVAN:")
+        prompt_parts.append("")
+        for i, memory in enumerate(retrieved_memories[:3], 1):
+            task_desc = memory.get('task', 'Unknown')
+            outcome = memory.get('outcome', '')
+            success = memory.get('success', False)
+            actions = memory.get('actions', [])
+
+            status_emoji = "✅" if success else "❌"
+            prompt_parts.append(f"{i}. {status_emoji} {task_desc[:80]}")
+
+            if actions:
+                prompt_parts.append(f"   Actions: {', '.join(actions[:3])}")
+            if outcome:
+                prompt_parts.append(f"   Hasil: {outcome[:100]}")
+            prompt_parts.append("")
+
+    # Add retrieved lessons
+    if retrieved_lessons and len(retrieved_lessons) > 0:
+        prompt_parts.append("💡 LESSONS LEARNED:")
+        prompt_parts.append("")
+        for i, lesson in enumerate(retrieved_lessons[:3], 1):
+            lesson_text = lesson.get('lesson', '')
+            category = lesson.get('category', 'general')
+            importance = lesson.get('importance', 0.5)
+
+            stars = "⭐" * min(5, max(1, int(importance * 5)))
+            prompt_parts.append(f"{i}. {stars} [{category}]")
+            prompt_parts.append(f"   {lesson_text}")
+            prompt_parts.append("")
+
+    # Add retrieved strategies
+    if retrieved_strategies and len(retrieved_strategies) > 0:
+        prompt_parts.append("🎯 STRATEGI YANG TERBUKTI BERHASIL:")
+        prompt_parts.append("")
+        for i, strategy in enumerate(retrieved_strategies[:3], 1):
+            strategy_text = strategy.get('strategy', '')
+            task_type = strategy.get('task_type', 'general')
+            success_rate = strategy.get('success_rate', 0.0)
+
+            prompt_parts.append(f"{i}. [{task_type}] Success Rate: {success_rate*100:.0f}%")
+            prompt_parts.append(f"   {strategy_text}")
+            prompt_parts.append("")
+
+    # Add error warnings
+    if error_warnings and len(error_warnings) > 0:
+        prompt_parts.append("⚠️ PERINGATAN ERROR MASA LALU:")
+        prompt_parts.append("")
+        for i, warning in enumerate(error_warnings[:3], 1):
+            prompt_parts.append(f"{i}. {warning}")
+        prompt_parts.append("")
+
+    # Separator
+    prompt_parts.append("="*60)
+    prompt_parts.append("")
+
+    # Current task
+    prompt_parts.append("🎯 TASK SAAT INI:")
+    prompt_parts.append(task)
+    prompt_parts.append("")
+
+    # Instruction
+    if retrieved_memories or retrieved_lessons or retrieved_strategies:
+        prompt_parts.append("💭 GUNAKAN KONTEKS DI ATAS:")
+        prompt_parts.append("- Pelajari dari keberhasilan/kegagalan masa lalu")
+        prompt_parts.append("- Terapkan strategi yang sudah terbukti berhasil")
+        prompt_parts.append("- Hindari kesalahan yang sama")
+        prompt_parts.append("- Gunakan lessons learned sebagai panduan")
+        prompt_parts.append("")
+
+    return "\n".join(prompt_parts)
+
+
+def create_react_prompt_with_semantic_context(
+    question: str,
+    tools: list,
+    history: List[tuple],
+    current_iteration: int,
+    max_iterations: int,
+    semantic_context: Optional[dict] = None
+) -> str:
+    """Create ReAct prompt with injected semantic context.
+
+    Args:
+        question: User question/task
+        tools: Available tools
+        history: Action history
+        current_iteration: Current iteration
+        max_iterations: Max iterations
+        semantic_context: Retrieved context from ChromaDB
+
+    Returns:
+        ReAct prompt with semantic context
+    """
+    prompt_parts = []
+
+    # INJECT SEMANTIC CONTEXT FIRST
+    if semantic_context:
+        memories = semantic_context.get('similar_experiences', [])
+        lessons = semantic_context.get('relevant_lessons', [])
+        strategies = semantic_context.get('recommended_strategies', [])
+
+        if memories or lessons or strategies:
+            prompt_parts.append("[SEMANTIC MEMORY CONTEXT]")
+            prompt_parts.append("")
+
+            if memories and len(memories) > 0:
+                prompt_parts.append(f"📚 {len(memories)} Past Similar Tasks:")
+                for mem in memories[:2]:
+                    success = "✅" if mem.get('success') else "❌"
+                    task = mem.get('task', '')[:60]
+                    prompt_parts.append(f"  {success} {task}")
+                prompt_parts.append("")
+
+            if lessons and len(lessons) > 0:
+                prompt_parts.append(f"💡 {len(lessons)} Relevant Lessons:")
+                for lesson in lessons[:2]:
+                    text = lesson.get('lesson', '')[:70]
+                    prompt_parts.append(f"  • {text}")
+                prompt_parts.append("")
+
+            if strategies and len(strategies) > 0:
+                prompt_parts.append(f"🎯 {len(strategies)} Proven Strategies:")
+                for strat in strategies[:2]:
+                    text = strat.get('strategy', '')[:70]
+                    rate = strat.get('success_rate', 0) * 100
+                    prompt_parts.append(f"  • [{rate:.0f}%] {text}")
+                prompt_parts.append("")
+
+            prompt_parts.append("[END SEMANTIC CONTEXT]")
+            prompt_parts.append("")
+
+    # Main ReAct prompt
+    prompt_parts.append(f"🎯 Task: {question}")
+    prompt_parts.append(f"📍 Iteration: {current_iteration}/{max_iterations}")
+    prompt_parts.append("")
+
+    # Tools
+    prompt_parts.append("🔧 Available Tools:")
+    for tool in tools:
+        prompt_parts.append(f"  • {tool.name}: {tool.description}")
+    prompt_parts.append("")
+
+    # History
+    if history:
+        prompt_parts.append("📜 Previous Actions:")
+        for thought, observation in history[-3:]:
+            prompt_parts.append(f"  Thought: {thought[:80]}")
+            prompt_parts.append(f"  Observation: {observation[:80]}")
+            prompt_parts.append("")
+
+    # Instructions
+    prompt_parts.append("💭 Think step-by-step using ReAct format:")
+    prompt_parts.append("")
+    prompt_parts.append("Thought: [Your reasoning - consider semantic context above]")
+    prompt_parts.append("Action: [tool_name]")
+    prompt_parts.append("Action Input: {\"param\": \"value\"}")
+    prompt_parts.append("")
+    prompt_parts.append("Or when done:")
+    prompt_parts.append("Thought: Task complete")
+    prompt_parts.append("Final Answer: [result]")
+    prompt_parts.append("")
+
+    if semantic_context:
+        prompt_parts.append("⚡ REMEMBER: Use the semantic context above to make better decisions!")
+
+    return "\n".join(prompt_parts)
+
+
+def create_agentic_system_prompt_v2() -> str:
+    """Create enhanced agentic system prompt with memory awareness.
+
+    Returns:
+        System prompt for agentic AI
+    """
+    return """Kamu adalah Radira, AI Agent yang Self-Aware dan Continuously Learning.
+
+🧠 KAPABILITAS UTAMA:
+
+1. **Semantic Memory Access**
+   - Kamu memiliki akses ke memori semantik dari pengalaman masa lalu
+   - Gunakan pengalaman relevan untuk membuat keputusan lebih baik
+   - Pelajari dari keberhasilan dan kegagalan sebelumnya
+
+2. **Reflective Learning**
+   - Setiap task adalah kesempatan belajar
+   - Extract lessons learned dan simpan untuk masa depan
+   - Improve continuously berdasarkan refleksi
+
+3. **Strategic Tool Usage**
+   - Gunakan tools dengan bijak berdasarkan context
+   - Pilih strategi yang sudah terbukti berhasil
+   - Jangan ulangi kesalahan yang sama
+
+4. **Step-by-Step Reasoning**
+   - Think before act - reasoning is key
+   - Validate prerequisites sebelum execute
+   - Match action to intent - jangan asal execute
+
+🎯 PRINSIP KERJA:
+
+**BEFORE** setiap action:
+1. Check semantic memory - ada pengalaman serupa?
+2. Apply lessons learned - apa yang harus dihindari/diikuti?
+3. Choose proven strategy - strategi mana yang berhasil?
+4. Validate prerequisites - apakah semua syarat terpenuhi?
+
+**DURING** execution:
+1. Monitor progress - apakah sesuai rencana?
+2. Handle errors gracefully - jangan panic
+3. Log important events - untuk reflection nanti
+
+**AFTER** completion:
+1. Reflect on hasil - apa yang berjalan baik/buruk?
+2. Extract lessons - apa yang dipelajari?
+3. Save strategy - strategi apa yang berhasil?
+
+💡 MENGGUNAKAN SEMANTIC CONTEXT:
+
+Ketika kamu menerima semantic context:
+- **Past Experiences**: Pelajari apa yang berhasil/gagal
+- **Lessons Learned**: Terapkan insights dari masa lalu
+- **Proven Strategies**: Ikuti strategi dengan success rate tinggi
+- **Error Warnings**: Hindari mistake yang sama
+
+🚫 JANGAN:
+- Ignore semantic context yang diberikan
+- Ulangi kesalahan yang sudah pernah terjadi
+- Gunakan strategi yang sudah terbukti gagal
+- Act tanpa reasoning
+
+✅ LAKUKAN:
+- Gunakan context untuk inform decisions
+- Apply proven strategies
+- Learn from past mistakes
+- Think before act
+
+Kamu bukan hanya tool executor - kamu adalah LEARNING AGENT yang terus berkembang!"""
+
+
+def format_log_message(
+    level: str,
+    message: str,
+    details: Optional[dict] = None
+) -> str:
+    """Format log message with emoji indicators.
+
+    Args:
+        level: Log level (THINKING, RETRIEVAL, ACTION, LEARNED, ERROR, etc)
+        message: Main message
+        details: Optional details dict
+
+    Returns:
+        Formatted log string
+    """
+    emoji_map = {
+        "THINKING": "💭",
+        "RETRIEVAL": "📚",
+        "ACTION": "🔧",
+        "LEARNED": "✨",
+        "ERROR": "❌",
+        "SUCCESS": "✅",
+        "WARNING": "⚠️",
+        "INFO": "ℹ️",
+        "MEMORY": "🧠",
+        "STRATEGY": "🎯",
+        "REFLECTION": "🤔"
+    }
+
+    emoji = emoji_map.get(level.upper(), "•")
+    log_parts = [f"{emoji} [{level}] {message}"]
+
+    if details:
+        for key, value in details.items():
+            log_parts.append(f"    {key}: {value}")
+
+    return "\n".join(log_parts)

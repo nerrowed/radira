@@ -18,6 +18,7 @@ class TaskType(Enum):
     FILE_OPERATION = "file_operation"  # File read/write/modify
     WEB_SEARCH = "web_search"  # Butuh search internet
     CODE_GENERATION = "code_generation"  # Generate atau modify code
+    WEB_GENERATION = "web_generation"  # Generate HTML/CSS/web pages
     PENTEST = "pentest"  # Security testing
     TERMINAL_COMMAND = "terminal_command"  # Execute commands
     COMPLEX_MULTI_STEP = "complex_multi_step"  # Multi-step task
@@ -59,8 +60,19 @@ class TaskClassifier:
 
     CODE_GEN_PATTERNS = [
         r'\b(buat|create|generate)\b.*\b(code|program|script|function)\b',
+        r'\b(buatkan|buat)\b.*\b(aplikasi|app|kalkulator|calculator|program|skrip)\b',
+        r'\b(buatkan|buat)\b.*\.py\b',  # Python files
         r'\b(implement|implementasi)\b.*\b(algorithm|function|class)\b',
         r'\b(fix|perbaiki)\b.*\b(bug|error|issue)\b',
+        r'\b(tulis|write)\b.*\b(python|javascript|java|c\+\+|rust|go)\b',
+    ]
+
+    WEB_GEN_PATTERNS = [
+        r'\b(buat|buatkan|create|generate)\b.*\b(halaman|page|website|web|situs)\b',
+        r'\b(buat|buatkan|create)\b.*(html|css|javascript|js)\b',
+        r'\b(halaman|page)\b.*(login|form|navbar|footer|home|landing)\b',
+        r'\b(website|web|situs)\b.*(toko|tokopedia|shopee|store|e-commerce)\b',
+        r'\.html\b|\.css\b',  # HTML/CSS files
     ]
 
     PENTEST_PATTERNS = [
@@ -113,6 +125,10 @@ class TaskClassifier:
         if self._matches_patterns(task_lower, self.CODE_GEN_PATTERNS):
             return TaskType.CODE_GENERATION, 0.85
 
+        # Check web generation (before web search to avoid confusion)
+        if self._matches_patterns(task_lower, self.WEB_GEN_PATTERNS):
+            return TaskType.WEB_GENERATION, 0.85
+
         # Check web search
         if self._matches_patterns(task_lower, self.WEB_SEARCH_PATTERNS):
             return TaskType.WEB_SEARCH, 0.85
@@ -153,6 +169,7 @@ class TaskClassifier:
             TaskType.FILE_OPERATION: ["file_system"],
             TaskType.WEB_SEARCH: ["web_search"],
             TaskType.CODE_GENERATION: ["file_system", "terminal"],
+            TaskType.WEB_GENERATION: ["web_generator", "file_system"],
             TaskType.PENTEST: ["pentest", "terminal", "file_system"],
             TaskType.TERMINAL_COMMAND: ["terminal"],
             TaskType.COMPLEX_MULTI_STEP: ["file_system", "terminal", "web_search"],  # All tools
@@ -175,6 +192,7 @@ class TaskClassifier:
             TaskType.FILE_OPERATION: 0.3,  # Structured
             TaskType.WEB_SEARCH: 0.3,  # Structured
             TaskType.CODE_GENERATION: 0.5,  # Creative but controlled
+            TaskType.WEB_GENERATION: 0.6,  # Creative design
             TaskType.PENTEST: 0.5,  # Exploratory
             TaskType.TERMINAL_COMMAND: 0.3,  # Structured
             TaskType.COMPLEX_MULTI_STEP: 0.4,  # Balanced
@@ -197,6 +215,7 @@ class TaskClassifier:
             TaskType.FILE_OPERATION: 3,  # Read/verify/write
             TaskType.WEB_SEARCH: 3,  # Search/extract/summarize
             TaskType.CODE_GENERATION: 5,  # Generate/test/refine
+            TaskType.WEB_GENERATION: 5,  # Generate/validate/refine
             TaskType.PENTEST: 8,  # Multi-step exploration
             TaskType.TERMINAL_COMMAND: 3,  # Execute/verify/retry
             TaskType.COMPLEX_MULTI_STEP: 10,  # Full complexity

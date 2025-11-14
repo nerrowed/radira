@@ -1,0 +1,64 @@
+================================================================================
+TOOL NAMES COMPARISON: REGISTRY vs CLASSIFIER
+================================================================================
+
+REGISTRY TOOL NAMES (from property implementations):
+  
+  Tool Class              Name Property Value    File/Line
+  ─────────────────────── ──────────────────── ──────────────────
+  FileSystemTool          "file_system"        filesystem.py:43
+  TerminalTool            "terminal"           terminal.py:76
+  WebGeneratorTool        "web_generator"      web_generator.py:40
+  WebSearchTool           "web_search"         web_search.py:52
+  PentestTool             "pentest"            pentest.py:91
+
+CLASSIFIER MAPPINGS (get_required_tools method):
+
+  Task Type                Required Tools          File/Line
+  ────────────────────── ──────────────────────── ──────────────────
+  FILE_OPERATION         ["file_system"]         task_classifier.py:115
+  WEB_SEARCH             ["web_search"]          task_classifier.py:116
+  CODE_GENERATION        ["file_system","terminal"]
+  PENTEST                ["pentest","terminal","file_system"]
+  TERMINAL_COMMAND       ["terminal"]            task_classifier.py:119
+  COMPLEX_MULTI_STEP     ["file_system","terminal","web_search"]
+
+MATCHING ANALYSIS:
+
+  Name               Used By Classifier  In Registry  Status
+  ────────────────── ─────────────────── ─────────── ────────
+  file_system        YES (multiple)      YES         MATCH
+  terminal           YES (multiple)      YES         MATCH
+  web_search         YES (multiple)      YES         MATCH
+  pentest            YES (1x)            YES         MATCH
+  web_generator      NO                  YES         (not used)
+
+VERDICT:
+========
+
+ALL TOOL NAMES USED BY THE CLASSIFIER ARE PRESENT IN THE REGISTRY.
+NO MISMATCH EXISTS.
+
+The problem is NOT a name mismatch.
+The problem is likely a RUNTIME ISSUE:
+  - Empty registry at execution time
+  - DualOrchestrator not being used
+  - Pattern matching failure
+  - Registry singleton issues
+
+CONFIGURATION STATUS:
+====================
+
+File: .env
+USE_DUAL_ORCHESTRATOR=true        ENABLED (DualOrchestrator)
+ENABLE_TASK_CLASSIFICATION=true   ENABLED (Task classification)
+
+SETTINGS ARE CORRECTLY CONFIGURED.
+
+CONCLUSION:
+===========
+
+The code logic is correct. Tool names match. Settings are configured properly.
+The issue is in the RUNTIME EXECUTION, not in the code structure.
+
+================================================================================
