@@ -99,6 +99,36 @@ def get_orchestrator_class(orchestrator_type: str):
         return AgentOrchestrator
 
 
+def get_agent_state(agent, orchestrator_type: str) -> Dict[str, Any]:
+    """Get agent state/stats compatible with all orchestrator types.
+
+    Args:
+        agent: Orchestrator instance
+        orchestrator_type: Type of orchestrator
+
+    Returns:
+        Normalized state dictionary
+    """
+    if orchestrator_type == "function_calling":
+        # FunctionOrchestrator uses get_stats()
+        stats = agent.get_stats()
+        return {
+            "iteration": stats.get("total_iterations", 0),
+            "max_iterations": agent.max_iterations,
+            "token_stats": {
+                "total_tokens": stats.get("total_tokens_used", 0),
+                "prompt_tokens": 0,  # Not tracked separately
+                "completion_tokens": 0  # Not tracked separately
+            },
+            "tool_stats": {},  # FunctionOrchestrator doesn't track per-tool stats
+            "messages_count": stats.get("messages_in_history", 0),
+            "functions_available": stats.get("functions_available", 0)
+        }
+    else:
+        # DualOrchestrator and ClassicOrchestrator use get_state()
+        return agent.get_state()
+
+
 def setup_tools():
     """Register all available tools."""
     workspace_dirs = setup_workspace()
@@ -207,7 +237,7 @@ async def get_session(session_id: str):
     session = sessions[session_id]
 
     # Get agent state
-    state = session["agent"].get_state()
+    state = get_agent_state(session["agent"], session["config"]["orchestrator_type"])
 
     return {
         "session_id": session_id,
@@ -218,7 +248,7 @@ async def get_session(session_id: str):
             "iteration": state["iteration"],
             "max_iterations": state["max_iterations"],
             "token_stats": state["token_stats"],
-            "tool_stats": state["tool_stats"]
+            "tool_stats": state.get("tool_stats", {})
         }
     }
 
@@ -336,16 +366,24 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     })
 
                     # Send stats
-                    state = agent.get_state()
+                    state = get_agent_state(agent, session["config"]["orchestrator_type"])
+
+                    # Calculate tools used based on orchestrator type
+                    tools_used = 0
+                    if session["config"]["orchestrator_type"] == "function_calling":
+                        tools_used = state.get("iteration", 0)  # Use iteration count as proxy
+                    else:
+                        tools_used = sum(
+                            stats["execution_count"]
+                            for stats in state.get("tool_stats", {}).values()
+                        )
+
                     await websocket.send_json({
                         "type": "stats",
                         "data": {
                             "iteration": state["iteration"],
                             "tokens": state["token_stats"]["total_tokens"],
-                            "tools_used": sum(
-                                stats["execution_count"]
-                                for stats in state["tool_stats"].values()
-                            )
+                            "tools_used": tools_used
                         }
                     })
 
