@@ -328,6 +328,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             if data.get("type") == "message":
                 user_message = data.get("content", "")
 
+                # DEBUG: Log received message
+                logger.info(f"[Session {session_id[:8]}] Received message: {user_message!r}")
+
                 # Add to history
                 session["history"].append({
                     "role": "user",
@@ -350,7 +353,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                     # Execute task
                     agent = session["agent"]
+                    logger.info(f"[Session {session_id[:8]}] Executing with {session['config']['orchestrator_type']} orchestrator")
                     result = agent.run(user_message)
+                    logger.info(f"[Session {session_id[:8]}] Result: {result!r}")
 
                     # Add to history
                     session["history"].append({
