@@ -130,6 +130,11 @@ class FunctionOrchestrator:
         Returns:
             Final response string
         """
+        # RESET TOKEN USAGE AT START OF EACH TASK (prevent accumulation across tasks)
+        self.current_token_usage = 0
+        self.total_tokens_used = 0
+        self.llm.reset_token_stats()
+
         if self.verbose:
             print(f"📥 User: {user_input}\n")
 
@@ -183,17 +188,37 @@ class FunctionOrchestrator:
                 logger.warning(f"Memory retrieval failed: {e}")
                 enriched_system_prompt = self.base_system_prompt
 
-        # STEP 3: Initialize conversation with enriched prompt
-        self.messages = [
-            {"role": "system", "content": enriched_system_prompt},
-            {"role": "user", "content": user_input}
-        ]
+        # STEP 3: Maintain conversation history (don't reset every time)
+        #
+        # IMPORTANT: This maintains context across turns BUT with safeguards:
+        # 1. Token counter is RESET at start of each run() (line 133-136)
+        # 2. Old messages are auto-truncated by _manage_context_window()
+        # 3. Max context = history_keep_last_n * 2 (default: 10 messages)
+        # 4. Token budget per task prevents overflow (max_total_tokens_per_task)
+        #
+        # Trade-off: More context = better AI understanding, but higher token usage per call
+        if not self.messages or len(self.messages) == 0:
+            # First conversation - initialize with system prompt
+            self.messages = [
+                {"role": "system", "content": enriched_system_prompt},
+                {"role": "user", "content": user_input}
+            ]
+        else:
+            # Ongoing conversation - update system prompt and append user message
+            self.messages[0] = {"role": "system", "content": enriched_system_prompt}
+            self.messages.append({"role": "user", "content": user_input})
 
         # STEP 4: Run LLM reasoning loop
         try:
             final_response = self._reasoning_loop()
 
-            # STEP 5: Intelligently store memory (with filtering)
+            # STEP 5: Add assistant response to conversation history
+            self.messages.append({
+                "role": "assistant",
+                "content": final_response
+            })
+
+            # STEP 6: Intelligently store memory (with filtering)
             if self.enable_memory:
                 self._store_intelligently(user_input, final_response)
 
@@ -481,19 +506,18 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
 
         Strategy:
         1. Keep system message (always first)
-        2. Keep original user message (always second)
-        3. Keep last N conversation turns (configurable)
-        4. Truncate long tool results to summaries
+        2. Keep last N conversation turns (configurable)
+        3. Truncate long tool results to summaries
         """
         if len(self.messages) <= 2:
-            # Only system + user message, nothing to manage
+            # Only system + first user message, nothing to manage
             return
 
         # Calculate current context size
         estimated_tokens = self._estimate_context_tokens()
 
         # If under limit and message count reasonable, no action needed
-        max_messages = self.max_context_messages + 2  # +2 for system and user
+        max_messages = self.max_context_messages + 1  # +1 for system
         if len(self.messages) <= max_messages and estimated_tokens < (self.max_tokens_per_task * 0.7):
             return
 
@@ -503,10 +527,9 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
                 f"~{estimated_tokens} tokens"
             )
 
-        # Strategy: Keep system (0), user (1), and last N messages
+        # Strategy: Keep system (0) and last N conversation messages
         system_msg = self.messages[0]
-        user_msg = self.messages[1]
-        conversation = self.messages[2:]
+        conversation = self.messages[1:]
 
         # Keep only last N conversation messages
         keep_last_n = self.max_context_messages
@@ -519,7 +542,7 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
             conversation = truncated
 
         # Rebuild messages list
-        self.messages = [system_msg, user_msg] + conversation
+        self.messages = [system_msg] + conversation
 
         # Truncate long tool results
         self._truncate_tool_results()

@@ -18,6 +18,10 @@ from rich.prompt import Prompt
 logging.getLogger("chromadb.api.segment").setLevel(logging.WARNING)
 logging.getLogger("chromadb").setLevel(logging.WARNING)
 
+# Suppress verbose HTTP request logs from httpx/groq client
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("groq._base_client").setLevel(logging.WARNING)
+
 from agent.llm.groq_client import get_groq_client
 from agent.tools.registry import get_registry
 from config.settings import settings
