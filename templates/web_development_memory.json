@@ -1,0 +1,139 @@
+{
+  "lessons": [
+    {
+      "lesson": "Always include viewport meta tag for mobile responsiveness",
+      "context": "Web development - Mobile-first design",
+      "category": "best_practice",
+      "importance": 0.8
+    },
+    {
+      "lesson": "Validate HTML syntax before deployment to avoid browser rendering issues",
+      "context": "Web development - Quality assurance",
+      "category": "quality_assurance",
+      "importance": 0.9
+    },
+    {
+      "lesson": "Sanitize all user input to prevent XSS attacks",
+      "context": "Web security - Input handling",
+      "category": "security",
+      "importance": 1.0
+    },
+    {
+      "lesson": "Use semantic HTML5 tags (header, nav, main, footer) for better SEO",
+      "context": "Web development - SEO optimization",
+      "category": "best_practice",
+      "importance": 0.7
+    },
+    {
+      "lesson": "Always test responsive design on at least 3 breakpoints (mobile, tablet, desktop)",
+      "context": "Web development - Responsive design",
+      "category": "quality_assurance",
+      "importance": 0.85
+    },
+    {
+      "lesson": "Minimize HTTP requests by combining CSS and JS files",
+      "context": "Web performance - Optimization",
+      "category": "optimization",
+      "importance": 0.75
+    },
+    {
+      "lesson": "Use HTTPS for all production websites to ensure security",
+      "context": "Web security - Transport layer",
+      "category": "security",
+      "importance": 1.0
+    },
+    {
+      "lesson": "Implement proper error handling for form submissions",
+      "context": "Web development - Forms",
+      "category": "error_prevention",
+      "importance": 0.9
+    }
+  ],
+  "strategies": [
+    {
+      "strategy": "Create HTML structure → Add CSS styling → Add JavaScript → Test in browser → Validate",
+      "task_type": "web_page_creation",
+      "success_rate": 0.9,
+      "context": "Standard web development workflow for creating new pages"
+    },
+    {
+      "strategy": "Design mockup → Create HTML skeleton → Style with CSS → Add interactivity → Test responsiveness",
+      "task_type": "web_development",
+      "success_rate": 0.88,
+      "context": "Complete web design to deployment workflow"
+    },
+    {
+      "strategy": "Identify issue → Check browser console → Fix code → Clear cache → Retest",
+      "task_type": "web_debugging",
+      "success_rate": 0.85,
+      "context": "Debugging workflow for web issues"
+    },
+    {
+      "strategy": "Create form HTML → Add validation → Test edge cases → Add error messages → Test UX",
+      "task_type": "form_creation",
+      "success_rate": 0.92,
+      "context": "Building robust web forms with validation"
+    }
+  ],
+  "experiences": [
+    {
+      "task": "Create responsive landing page with hero section and contact form",
+      "actions": [
+        "create_file: index.html",
+        "add_html5_boilerplate",
+        "create_file: styles.css",
+        "add_viewport_meta",
+        "design_hero_section",
+        "create_contact_form",
+        "add_css_responsive_grid",
+        "test_mobile_view",
+        "test_desktop_view",
+        "validate_html"
+      ],
+      "outcome": "Successfully created responsive landing page. Validated with W3C. Works perfectly on mobile, tablet, and desktop.",
+      "success": true,
+      "metadata": {
+        "category": "web_development",
+        "complexity": "medium",
+        "duration_minutes": 20,
+        "technologies": ["HTML5", "CSS3"]
+      }
+    },
+    {
+      "task": "Fix XSS vulnerability in user comment form",
+      "actions": [
+        "identify_vulnerability",
+        "review_input_sanitization",
+        "implement_escaping",
+        "add_CSP_headers",
+        "test_XSS_payloads",
+        "verify_fix"
+      ],
+      "outcome": "Successfully patched XSS vulnerability. All test payloads properly sanitized.",
+      "success": true,
+      "metadata": {
+        "category": "security",
+        "complexity": "high",
+        "severity": "critical"
+      }
+    },
+    {
+      "task": "Optimize page load time for slow-loading website",
+      "actions": [
+        "analyze_performance",
+        "identify_large_images",
+        "compress_images",
+        "minify_css_js",
+        "enable_browser_caching",
+        "measure_improvement"
+      ],
+      "outcome": "Reduced page load time from 8s to 2s. 75% improvement.",
+      "success": true,
+      "metadata": {
+        "category": "optimization",
+        "complexity": "medium",
+        "performance_gain": "75%"
+      }
+    }
+  ]
+}
