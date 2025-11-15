@@ -31,6 +31,17 @@ AgentOrchestrator = None
 ORCHESTRATOR_TYPE = None
 from agent.tools.filesystem import FileSystemTool
 from agent.tools.terminal import TerminalTool
+# Import new V2 tools (LLM-friendly)
+from agent.tools.filesystem_v2 import (
+    ReadFileTool,
+    WriteFileTool,
+    ListDirectoryTool,
+    CreateDirectoryTool,
+    DeleteFileTool,
+    SearchFilesTool,
+    CheckFileExistsTool
+)
+from agent.tools.terminal_v2 import TerminalToolV2, ShellToolV2
 from agent.tools.web_generator import WebGeneratorTool
 from agent.tools.code_generator import CodeGeneratorTool
 from agent.tools.web_search import WebSearchTool
@@ -80,10 +91,22 @@ def setup_tools():
 
     registry = get_registry()
 
-    # Register tools
+    # Register V2 tools (LLM-friendly modular tools)
     tools = [
+        # File system tools (V2 - modular)
+        ReadFileTool(working_directory=settings.working_directory),
+        WriteFileTool(working_directory=settings.working_directory),
+        ListDirectoryTool(working_directory=settings.working_directory),
+        CreateDirectoryTool(working_directory=settings.working_directory),
+        DeleteFileTool(working_directory=settings.working_directory),
+        SearchFilesTool(working_directory=settings.working_directory),
+        CheckFileExistsTool(working_directory=settings.working_directory),
+        # Terminal tool (V2 - improved descriptions)
+        TerminalToolV2(working_directory=settings.working_directory),
+        # Legacy tools (kept for backward compatibility)
         FileSystemTool(working_directory=settings.working_directory),
         TerminalTool(working_directory=settings.working_directory),
+        # Other tools
         WebGeneratorTool(output_directory=settings.working_directory),
         CodeGeneratorTool(output_directory=settings.working_directory),
         WebSearchTool(max_results=5),
