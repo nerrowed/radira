@@ -113,6 +113,7 @@ class FunctionOrchestrator:
         self.total_tool_calls = 0
         self.tools_executed = []  # Track for experience storage
         self.total_tokens_used = 0
+        self.tasks_processed = 0  # Track tasks for periodic cleanup
 
         if self.verbose:
             print(f"\n🤖 Function Orchestrator initialized")
@@ -221,6 +222,15 @@ class FunctionOrchestrator:
             # STEP 6: Intelligently store memory (with filtering)
             if self.enable_memory:
                 self._store_intelligently(user_input, final_response)
+
+            # STEP 7: Periodic memory health check (every 10 tasks)
+            self.tasks_processed += 1
+            if self.tasks_processed % 10 == 0:
+                health = self.check_memory_health()
+                if not health.get("healthy", True) and self.verbose:
+                    logger.warning("Memory health check triggered cleanup")
+                    for action in health.get("actions_taken", []):
+                        logger.info(f"  - {action}")
 
             # Reset token usage after task completion
             self.current_token_usage = 0
@@ -854,6 +864,80 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
             "token_budget_remaining": max(0, self.max_tokens_per_task - self.current_token_usage)
         }
 
+    def clear_conversation_history(self, keep_system_prompt: bool = True) -> int:
+        """Clear conversation history to free memory.
+
+        Args:
+            keep_system_prompt: Keep system prompt message
+
+        Returns:
+            Number of messages cleared
+        """
+        cleared_count = len(self.messages)
+
+        if keep_system_prompt and len(self.messages) > 0:
+            # Keep only system prompt
+            self.messages = [self.messages[0]]
+            cleared_count -= 1
+        else:
+            self.messages = []
+
+        if self.verbose:
+            logger.info(f"Cleared {cleared_count} messages from conversation history")
+
+        return cleared_count
+
+    def check_memory_health(self) -> Dict[str, any]:
+        """Check memory health and perform cleanup if needed.
+
+        Returns:
+            Dict with health status and actions taken
+        """
+        try:
+            from agent.utils.memory_monitor import get_memory_monitor
+
+            monitor = get_memory_monitor()
+            health = monitor.check_memory_health()
+
+            actions_taken = []
+
+            # If memory issues detected, perform cleanup
+            if not health["healthy"]:
+                # Clear old conversation history
+                if len(self.messages) > self.max_context_messages:
+                    cleared = self.clear_conversation_history(keep_system_prompt=True)
+                    actions_taken.append(f"Cleared {cleared} old messages")
+
+                # Cleanup ChromaDB if enabled
+                if self.learning_manager and self.enable_memory:
+                    try:
+                        from agent.state.memory import get_vector_memory
+                        memory = get_vector_memory()
+
+                        # Cleanup old entries
+                        cleanup_result = memory.cleanup_old_entries(max_age_days=30)
+                        if cleanup_result["deleted"] > 0:
+                            actions_taken.append(f"Deleted {cleanup_result['deleted']} old memory entries")
+
+                        # Limit collection sizes
+                        limit_result = memory.limit_collection_size()
+                        if limit_result["pruned"] > 0:
+                            actions_taken.append(f"Pruned {limit_result['pruned']} memory entries")
+
+                    except Exception as e:
+                        logger.warning(f"ChromaDB cleanup failed: {e}")
+
+                # Reset memory baseline
+                monitor.reset_baseline()
+                actions_taken.append("Reset memory baseline")
+
+            health["actions_taken"] = actions_taken
+            return health
+
+        except Exception as e:
+            logger.error(f"Memory health check failed: {e}")
+            return {"healthy": False, "error": str(e)}
+
     def reset(self):
         """Reset conversation and stats."""
         self.messages = []
@@ -865,6 +949,48 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
 
         if self.verbose:
             print("🔄 Orchestrator reset\n")
+
+    def __enter__(self):
+        """Enter context manager (for 'with' statement)."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context manager - cleanup resources.
+
+        Args:
+            exc_type: Exception type if exception occurred
+            exc_val: Exception value
+            exc_tb: Exception traceback
+
+        Returns:
+            False to propagate exceptions
+        """
+        # Cleanup conversation history
+        self.clear_conversation_history(keep_system_prompt=False)
+
+        # Cleanup memory if enabled
+        if self.learning_manager and self.enable_memory:
+            try:
+                from agent.state.memory import get_vector_memory
+                memory = get_vector_memory()
+
+                # Perform cleanup
+                memory.cleanup_old_entries(max_age_days=30)
+                memory.limit_collection_size()
+
+                if self.verbose:
+                    logger.info("Memory cleanup completed on orchestrator exit")
+            except Exception as e:
+                logger.warning(f"Memory cleanup failed on exit: {e}")
+
+        # Reset stats
+        self.reset()
+
+        if self.verbose:
+            logger.info("Orchestrator context cleaned up")
+
+        # Don't suppress exceptions
+        return False
 
 
 # Singleton instance

@@ -470,6 +470,171 @@ class VectorMemory:
         output_file.write_text(json.dumps(export_data, indent=2))
         logger.info(f"Memory exported to {output_file}")
 
+    def cleanup_old_entries(
+        self,
+        max_age_days: int = 30,
+        keep_successful: bool = True
+    ) -> Dict[str, int]:
+        """Clean up old memory entries to prevent unbounded growth.
+
+        Args:
+            max_age_days: Remove entries older than this many days
+            keep_successful: Keep successful experiences even if old
+
+        Returns:
+            Dict with cleanup statistics
+        """
+        if not self.available:
+            logger.warning("ChromaDB not available, cleanup skipped")
+            return {"deleted": 0}
+
+        from datetime import datetime, timedelta
+
+        cutoff_date = datetime.now() - timedelta(days=max_age_days)
+        cutoff_iso = cutoff_date.isoformat()
+
+        deleted_count = 0
+
+        # Cleanup experiences
+        try:
+            all_experiences = self.experiences.get()
+            if all_experiences and all_experiences['ids']:
+                for idx, (exp_id, metadata) in enumerate(
+                    zip(all_experiences['ids'], all_experiences['metadatas'])
+                ):
+                    timestamp = metadata.get('timestamp', '')
+                    success = metadata.get('success', False)
+
+                    # Delete if old and (unsuccessful OR not keeping successful)
+                    if timestamp < cutoff_iso:
+                        if not keep_successful or not success:
+                            self.experiences.delete(ids=[exp_id])
+                            deleted_count += 1
+
+            logger.info(f"Cleaned up {deleted_count} old experiences (>{max_age_days} days)")
+
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+
+        return {"deleted": deleted_count, "cutoff_date": cutoff_iso}
+
+    def limit_collection_size(
+        self,
+        max_experiences: int = 1000,
+        max_lessons: int = 500,
+        max_strategies: int = 300
+    ) -> Dict[str, int]:
+        """Limit collection sizes by removing oldest entries.
+
+        Args:
+            max_experiences: Maximum number of experiences to keep
+            max_lessons: Maximum number of lessons to keep
+            max_strategies: Maximum number of strategies to keep
+
+        Returns:
+            Dict with pruning statistics
+        """
+        if not self.available:
+            logger.warning("ChromaDB not available, size limiting skipped")
+            return {"pruned": 0}
+
+        pruned_count = 0
+
+        def prune_collection(collection, max_size: int) -> int:
+            """Prune a collection to max size."""
+            count = collection.count()
+            if count <= max_size:
+                return 0
+
+            # Get all entries
+            all_data = collection.get()
+            if not all_data or not all_data['ids']:
+                return 0
+
+            # Sort by timestamp (oldest first)
+            entries = list(zip(
+                all_data['ids'],
+                all_data['metadatas']
+            ))
+            entries.sort(key=lambda x: x[1].get('timestamp', ''))
+
+            # Delete oldest entries
+            to_delete = count - max_size
+            ids_to_delete = [entries[i][0] for i in range(to_delete)]
+
+            collection.delete(ids=ids_to_delete)
+            return to_delete
+
+        try:
+            pruned_count += prune_collection(self.experiences, max_experiences)
+            pruned_count += prune_collection(self.lessons, max_lessons)
+            pruned_count += prune_collection(self.strategies, max_strategies)
+
+            logger.info(
+                f"Pruned {pruned_count} entries to maintain size limits "
+                f"(exp:{max_experiences}, lessons:{max_lessons}, strat:{max_strategies})"
+            )
+
+        except Exception as e:
+            logger.error(f"Error during size limiting: {e}")
+
+        return {"pruned": pruned_count}
+
+    def clear_all_memories(self, confirm: bool = False) -> bool:
+        """Clear all stored memories (DANGEROUS!).
+
+        Args:
+            confirm: Must be True to actually clear
+
+        Returns:
+            True if cleared, False otherwise
+        """
+        if not confirm:
+            logger.warning("clear_all_memories() called without confirmation, skipping")
+            return False
+
+        if not self.available:
+            self._memory_fallback = {
+                "experiences": [],
+                "lessons": [],
+                "strategies": [],
+                "facts": []
+            }
+            logger.info("Cleared fallback memory")
+            return True
+
+        try:
+            # Delete all collections
+            self.client.delete_collection("experiences")
+            self.client.delete_collection("lessons_learned")
+            self.client.delete_collection("successful_strategies")
+            self.client.delete_collection("user_facts")
+
+            # Recreate collections
+            self.experiences = self.client.get_or_create_collection(
+                name="experiences",
+                metadata={"description": "Task execution experiences"}
+            )
+            self.lessons = self.client.get_or_create_collection(
+                name="lessons_learned",
+                metadata={"description": "Extracted lessons and insights"}
+            )
+            self.strategies = self.client.get_or_create_collection(
+                name="successful_strategies",
+                metadata={"description": "Strategies that worked well"}
+            )
+            self.facts = self.client.get_or_create_collection(
+                name="user_facts",
+                metadata={"description": "Long-term facts about the user"}
+            )
+
+            logger.info("All memories cleared and collections recreated")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error clearing memories: {e}")
+            return False
+
 
 # Global instance
 _vector_memory: Optional[VectorMemory] = None

@@ -1,28 +1,31 @@
-# Quick Fixes - Urgent Issues
+# Quick Fixes - Resolved Issues
 
-## ❌ Issue #1: "No tools available" Error
+## ✅ Issue #1: "No tools available" Error - FIXED
 
-### Problem
+### Problem (RESOLVED)
 ```
 Task: coba baca file radira.txt
-🔧 Tools allowed: ['filesystem']  ← Wrong name!
-WARNING: No tools available
-Error: No tools available for this task
+🔧 Tools allowed: ['file_system']  ← Now correct!
 ```
 
 ### Root Cause
-Nama tool mismatch - classifier expects `'filesystem'` tapi actual tool name adalah `'file_system'` (dengan underscore).
+This issue has been resolved. Tool names are now consistent between classifier and registry.
 
-### Fix Location
+### Current State (CORRECT):
 **File**: `agent/core/task_classifier.py`
-**Line**: 153
+**Line**: 171
 
-### Current Code (WRONG):
 ```python
-TaskType.FILE_OPERATION: ["file_system"],  # ← Correct
+TaskType.FILE_OPERATION: ["file_system"],  # ✓ Correct - matches actual tool name
 ```
 
-But output shows `['filesystem']` without underscore!
+All tool names now properly match:
+- `file_system` ✓
+- `terminal` ✓
+- `web_generator` ✓
+- `code_generator` ✓
+- `web_search` ✓
+- `pentest` ✓
 
 ### Debug First:
 ```bash
