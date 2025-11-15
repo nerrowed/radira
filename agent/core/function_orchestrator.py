@@ -169,8 +169,8 @@ class FunctionOrchestrator:
             response = self.llm.chat_with_functions(
                 messages=self.messages,
                 functions=self.functions,
-                temperature=0.2,  # Low temperature for strict function calling
-                max_tokens=768,   # Limit tokens to force function calls (not code generation)
+                temperature=0.1,  # Very low temperature for strict function calling
+                max_tokens=512,   # Limit tokens to force function calls (not code generation)
                 tool_choice="auto"
             )
 
@@ -223,11 +223,6 @@ class FunctionOrchestrator:
                     print(f"\n⚠️  LLM generated text instead of calling function")
                     print(f"   Attempting retry with stricter instructions...")
 
-<<<<<<< HEAD
-                final_content = response.get("content")
-                # Reset token usage will be done in run() method
-                return final_content or "Task completed (with fallback)."
-=======
                 # Add correction message to force function calling
                 correction_msg = """
 🚨 ERROR: You just generated text/code directly instead of calling a function!
@@ -248,7 +243,7 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
 
                 # Retry with even stricter settings
                 if self.verbose:
-                    print(f"   🔄 Retrying with tool_choice='required'...")
+                    print(f"   🔄 Retrying with stricter settings...")
 
                 try:
                     retry_response = self.llm.chat_with_functions(
@@ -292,7 +287,6 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
                     # Use original partial response
                     final_content = response.get("content")
                     return final_content or "Task completed (with fallback)."
->>>>>>> 35ce8e7e1da9d24b46a17280f10d239c7b6d5a92
 
             else:
                 # LLM returned final response (no more tools)
