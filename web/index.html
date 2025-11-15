@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RADIRA Web Chat - AI Autonomous Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">RADIRA</h1>
+                <p class="subtitle">AI Autonomous Agent - Created by Nerrow</p>
+            </div>
+            <div class="header-actions">
+                <button id="newSessionBtn" class="btn btn-primary">New Session</button>
+                <button id="settingsBtn" class="btn btn-secondary">Settings</button>
+            </div>
+        </header>
+
+        <!-- Session Info -->
+        <div id="sessionInfo" class="session-info hidden">
+            <div class="session-details">
+                <span class="session-id">Session: <strong id="currentSessionId">-</strong></span>
+                <span class="orchestrator-type">Mode: <strong id="orchestratorType">-</strong></span>
+            </div>
+            <div class="stats">
+                <span class="stat-item">Iterations: <strong id="statIterations">0</strong></span>
+                <span class="stat-item">Tokens: <strong id="statTokens">0</strong></span>
+                <span class="stat-item">Tools: <strong id="statTools">0</strong></span>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="chat-wrapper">
+            <!-- Welcome Screen -->
+            <div id="welcomeScreen" class="welcome-screen">
+                <div class="welcome-content">
+                    <div class="welcome-icon">🤖</div>
+                    <h2>Welcome to RADIRA</h2>
+                    <p>Your autonomous AI agent for task execution</p>
+
+                    <div class="welcome-features">
+                        <div class="feature">
+                            <span class="feature-icon">⚡</span>
+                            <h3>Intelligent Task Execution</h3>
+                            <p>Advanced orchestration with anti-looping mechanisms</p>
+                        </div>
+                        <div class="feature">
+                            <span class="feature-icon">🧠</span>
+                            <h3>Semantic Memory</h3>
+                            <p>Learn from past experiences using ChromaDB</p>
+                        </div>
+                        <div class="feature">
+                            <span class="feature-icon">🛠️</span>
+                            <h3>Powerful Tools</h3>
+                            <p>File ops, terminal, code/web generation, pentesting</p>
+                        </div>
+                    </div>
+
+                    <button id="startChatBtn" class="btn btn-large btn-primary">Start Chatting</button>
+                </div>
+            </div>
+
+            <!-- Chat Container -->
+            <div id="chatContainer" class="chat-container hidden">
+                <div id="chatMessages" class="chat-messages"></div>
+
+                <!-- Typing Indicator -->
+                <div id="typingIndicator" class="typing-indicator hidden">
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div id="inputArea" class="input-area hidden">
+                <div class="input-wrapper">
+                    <textarea
+                        id="messageInput"
+                        class="message-input"
+                        placeholder="Type your task or question..."
+                        rows="1"
+                    ></textarea>
+                    <button id="sendBtn" class="btn-send" disabled>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 8L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="input-hints">
+                    <button class="hint-btn" data-hint="Create a landing page for a coffee shop">Web Generation</button>
+                    <button class="hint-btn" data-hint="List all Python files in the current directory">File Operations</button>
+                    <button class="hint-btn" data-hint="Generate a Python function to calculate fibonacci">Code Generation</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div id="settingsModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Session Settings</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="orchestratorSelect">Orchestrator Mode</label>
+                        <select id="orchestratorSelect" class="form-control">
+                            <option value="function_calling">Function Calling (Claude-like)</option>
+                            <option value="dual">Dual Orchestrator (Anti-Looping)</option>
+                            <option value="classic">Classic Orchestrator</option>
+                        </select>
+                        <small class="form-hint">Function Calling uses pure LLM reasoning without regex classification</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="enableMemory">
+                            Enable Semantic Memory
+                        </label>
+                        <small class="form-hint">Learn from past experiences using ChromaDB</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirmationMode">Confirmation Mode</label>
+                        <select id="confirmationMode" class="form-control">
+                            <option value="auto">Auto (Smart Decision)</option>
+                            <option value="yes">Yes (Always Execute)</option>
+                            <option value="no">No (Always Ask)</option>
+                        </select>
+                        <small class="form-hint">How to handle dangerous operations</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="saveSettingsBtn" class="btn btn-primary">Save & Start New Session</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Connection Status -->
+        <div id="connectionStatus" class="connection-status hidden">
+            <span class="status-dot"></span>
+            <span class="status-text">Connecting...</span>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
