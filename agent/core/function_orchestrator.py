@@ -155,11 +155,13 @@ class FunctionOrchestrator:
             self._manage_context_window()
 
             # Call LLM with functions
+            # Lower temperature for more deterministic function calling
+            # Lower max_tokens to discourage generating code directly
             response = self.llm.chat_with_functions(
                 messages=self.messages,
                 functions=self.functions,
-                temperature=0.5,  # Balanced creativity
-                max_tokens=2048,
+                temperature=0.2,  # Low temperature for strict function calling
+                max_tokens=768,   # Limit tokens to force function calls (not code generation)
                 tool_choice="auto"
             )
 
@@ -207,14 +209,75 @@ class FunctionOrchestrator:
                 continue
 
             elif is_failed_generation and response.get("content"):
-                # LLM failed to call function, but we recovered partial response
-                # This is a fallback - warn but return the content
+                # LLM failed to call function - RETRY with stricter prompt
                 if self.verbose:
-                    print(f"\n⚠️  LLM generated text instead of calling function (fallback mode)")
-                    print(f"   Returning partial response...")
+                    print(f"\n⚠️  LLM generated text instead of calling function")
+                    print(f"   Attempting retry with stricter instructions...")
 
-                final_content = response.get("content")
-                return final_content or "Task completed (with fallback)."
+                # Add correction message to force function calling
+                correction_msg = """
+🚨 ERROR: You just generated text/code directly instead of calling a function!
+
+This is WRONG and will cause API errors. You MUST:
+1. Use function calling for ALL actions (write file, read file, etc)
+2. NEVER write code blocks in your response
+3. NEVER explain what you would do - DO IT by calling the tool
+
+Please try again and CALL THE APPROPRIATE FUNCTION this time.
+Remember: Your interface is FUNCTION CALLING, not text generation!
+"""
+
+                self.messages.append({
+                    "role": "user",
+                    "content": correction_msg
+                })
+
+                # Retry with even stricter settings
+                if self.verbose:
+                    print(f"   🔄 Retrying with tool_choice='required'...")
+
+                try:
+                    retry_response = self.llm.chat_with_functions(
+                        messages=self.messages,
+                        functions=self.functions,
+                        temperature=0.1,  # Very low temperature
+                        max_tokens=512,   # Even lower tokens
+                        tool_choice="auto"  # Force tool use if possible
+                    )
+
+                    # Check if retry succeeded with tool calls
+                    retry_tool_calls = retry_response.get("tool_calls")
+                    if retry_tool_calls:
+                        if self.verbose:
+                            print(f"   ✅ Retry successful! LLM is now calling {len(retry_tool_calls)} tool(s)")
+
+                        # Add assistant message with tool calls
+                        self.messages.append({
+                            "role": "assistant",
+                            "content": retry_response.get("content") or "",
+                            "tool_calls": retry_tool_calls
+                        })
+
+                        # Execute tool calls
+                        for tool_call in retry_tool_calls:
+                            self._execute_tool_call(tool_call)
+
+                        # Continue loop
+                        continue
+                    else:
+                        # Retry also failed - fallback
+                        if self.verbose:
+                            print(f"   ⚠️  Retry failed - using fallback response")
+                        final_content = retry_response.get("content") or response.get("content")
+                        return final_content or "Task completed (with fallback due to function calling failure)."
+
+                except Exception as retry_error:
+                    logger.warning(f"Retry failed: {retry_error}")
+                    if self.verbose:
+                        print(f"   ❌ Retry error: {str(retry_error)}")
+                    # Use original partial response
+                    final_content = response.get("content")
+                    return final_content or "Task completed (with fallback)."
 
             else:
                 # LLM returned final response (no more tools)
