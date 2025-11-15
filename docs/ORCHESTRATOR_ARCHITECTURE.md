@@ -153,12 +153,13 @@ task_type, confidence = classifier.classify("scan subdomain polsri.ac.id")
 ```python
 CONVERSATIONAL → [] (no tools)
 SIMPLE_QA → [] (no tools)
-FILE_OPERATION → ["filesystem"]
+FILE_OPERATION → ["file_system"]
 WEB_SEARCH → ["web_search"]
-CODE_GENERATION → ["filesystem", "terminal"]
-PENTEST → ["pentest", "terminal", "filesystem"]
+CODE_GENERATION → ["code_generator", "file_system", "terminal"]
+WEB_GENERATION → ["web_generator", "file_system"]
+PENTEST → ["pentest", "terminal", "file_system"]
 TERMINAL_COMMAND → ["terminal"]
-COMPLEX_MULTI_STEP → ["filesystem", "terminal", "web_search"]
+COMPLEX_MULTI_STEP → ["file_system", "terminal", "web_search"]
 ```
 
 ---
