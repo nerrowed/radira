@@ -1,0 +1,21 @@
+# Optional: ChromaDB Dependencies
+# Install this ONLY if you need semantic vector search for large-scale memory
+#
+# WARNING: This will download 1-2GB+ of dependencies including:
+# - onnxruntime (may include CUDA support if NVIDIA GPU detected)
+# - hnswlib (C++ vector search library)
+# - Various ML model dependencies
+#
+# Installation:
+#   pip install -r requirements-chromadb.txt
+#
+# Use cases:
+# - Production with >10,000 memory entries
+# - Need semantic similarity search (not just keyword matching)
+# - Server has GPU for acceleration
+
+chromadb==0.4.24
+
+# Optional: Sentence transformers (if you want custom embeddings)
+# Note: Not currently used in codebase, but useful for custom semantic search
+# sentence-transformers==2.5.1

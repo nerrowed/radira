@@ -25,8 +25,15 @@ psycopg2-binary==2.9.9
 sqlalchemy==2.0.25
 
 # Optional - Vector Database (for memory/learning - Phase 3)
-chromadb==0.4.24
-sentence-transformers==2.5.1
+# REMOVED: chromadb==0.4.24  (heavy install with CUDA dependencies)
+# REMOVED: sentence-transformers==2.5.1  (not used, downloads huge models)
+#
+# ChromaDB is now OPTIONAL. The system has fallback in-memory storage.
+# To install ChromaDB (if needed for production with large memory):
+#   pip install chromadb==0.4.24
+#
+# For lightweight vector memory, the fallback system is sufficient
+# and uses ~0 additional memory vs 1-2GB+ for full ChromaDB
 
 # Optional - Task Queue (for async operations - Phase 4)
 celery==5.3.6
