@@ -31,6 +31,7 @@ from agent.tools.web_generator import WebGeneratorTool
 from agent.tools.code_generator import CodeGeneratorTool
 from agent.tools.web_search import WebSearchTool
 from agent.tools.pentest import PentestTool
+from agent.tools.enhanced_pentest import EnhancedPentestTool
 from agent.utils.workspace import setup_workspace
 
 # Setup rich console
@@ -82,7 +83,8 @@ def setup_tools():
         WebGeneratorTool(output_directory=settings.working_directory),
         CodeGeneratorTool(output_directory=settings.working_directory),
         WebSearchTool(max_results=5),
-        PentestTool(working_directory=settings.working_directory)
+        PentestTool(working_directory=settings.working_directory),
+        EnhancedPentestTool(working_directory=settings.working_directory)
     ]
 
     for tool in tools:
