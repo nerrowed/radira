@@ -130,6 +130,11 @@ class FunctionOrchestrator:
         Returns:
             Final response string
         """
+        # RESET TOKEN USAGE AT START OF EACH TASK (prevent accumulation across tasks)
+        self.current_token_usage = 0
+        self.total_tokens_used = 0
+        self.llm.reset_token_stats()
+
         if self.verbose:
             print(f"📥 User: {user_input}\n")
 
@@ -184,6 +189,14 @@ class FunctionOrchestrator:
                 enriched_system_prompt = self.base_system_prompt
 
         # STEP 3: Maintain conversation history (don't reset every time)
+        #
+        # IMPORTANT: This maintains context across turns BUT with safeguards:
+        # 1. Token counter is RESET at start of each run() (line 133-136)
+        # 2. Old messages are auto-truncated by _manage_context_window()
+        # 3. Max context = history_keep_last_n * 2 (default: 10 messages)
+        # 4. Token budget per task prevents overflow (max_total_tokens_per_task)
+        #
+        # Trade-off: More context = better AI understanding, but higher token usage per call
         if not self.messages or len(self.messages) == 0:
             # First conversation - initialize with system prompt
             self.messages = [
