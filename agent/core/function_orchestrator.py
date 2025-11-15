@@ -2,9 +2,16 @@
 
 Pure LLM reasoning without regex classification.
 Let the LLM decide what tools to use naturally.
+
+ENHANCED with:
+- Rule Engine (deterministic rule checking BEFORE reasoning)
+- Memory Filter (smart filtering of what gets stored)
+- Enhanced Retrieval (type-based memory search)
+- Meta-Memory System Prompt
 """
 
 import logging
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from agent.llm.groq_client import GroqClient, get_groq_client
 from agent.llm.function_definitions import (
@@ -17,6 +24,11 @@ from agent.tools.base import ToolResult
 from agent.core.confirmation_manager import ConfirmationManager, ConfirmationMode
 from agent.core.exceptions import ContextOverflowError, TokenLimitExceededError
 from config.settings import settings
+
+# NEW: Import enhanced memory components
+from agent.core.rule_engine import get_rule_engine
+from agent.state.memory_filter import get_memory_filter, MemoryType
+from agent.state.retrieval import get_enhanced_retrieval
 
 logger = logging.getLogger(__name__)
 
@@ -54,21 +66,38 @@ class FunctionOrchestrator:
         conf_mode = ConfirmationMode(confirmation_mode.lower())
         self.confirmation_manager = ConfirmationManager(mode=conf_mode, verbose=verbose)
 
+        # NEW: Enhanced memory components
+        self.rule_engine = None
+        self.memory_filter = None
+        self.enhanced_retrieval = None
+
         # Learning manager (lazy load)
         self.learning_manager = None
         if enable_memory:
             try:
                 from agent.learning.learning_manager import get_learning_manager
                 self.learning_manager = get_learning_manager()
+
+                # Initialize enhanced memory components
+                self.rule_engine = get_rule_engine()
+                self.memory_filter = get_memory_filter()
+                self.enhanced_retrieval = get_enhanced_retrieval()
+
                 if self.verbose:
-                    print("📚 Semantic memory enabled")
+                    print("📚 Enhanced memory system enabled:")
+                    print(f"   - Rule Engine: {self.rule_engine.get_rule_count()} rules loaded")
+                    print(f"   - Memory Filter: Active")
+                    print(f"   - Enhanced Retrieval: Active")
             except Exception as e:
-                logger.warning(f"Failed to initialize learning manager: {e}")
+                logger.warning(f"Failed to initialize memory components: {e}")
                 self.enable_memory = False
 
         # Get function definitions
         self.functions = get_all_function_definitions()
-        self.system_prompt = create_function_calling_system_prompt(self.functions)
+
+        # Load meta-memory system prompt
+        self.base_system_prompt = self._load_meta_memory_prompt()
+        self.system_prompt = self.base_system_prompt
 
         # Conversation history
         self.messages: List[Dict[str, Any]] = []
@@ -103,26 +132,69 @@ class FunctionOrchestrator:
         if self.verbose:
             print(f"📥 User: {user_input}\n")
 
-        # Get semantic context from ChromaDB if memory enabled
-        enriched_system_prompt = self.system_prompt
-        if self.enable_memory and self.learning_manager:
-            semantic_context = self._get_semantic_context(user_input)
-            if semantic_context:
-                enriched_system_prompt = self._inject_context_to_prompt(semantic_context)
+        # STEP 1: Check rules FIRST (deterministic, before LLM)
+        if self.enable_memory and self.rule_engine:
+            rule_response = self.rule_engine.check_rules(user_input)
+            if rule_response:
+                if self.verbose:
+                    print(f"🔴 RULE TRIGGERED: Responding deterministically")
+                    print(f"   Response: {rule_response}\n")
 
-        # Initialize conversation
+                # Store this as a successful rule application
+                if self.learning_manager:
+                    try:
+                        self.learning_manager.vector_memory.store_experience(
+                            task=user_input,
+                            actions=["rule_triggered"],
+                            outcome=rule_response,
+                            success=True,
+                            metadata={"type": "rule_application"}
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to store rule application: {e}")
+
+                return rule_response
+
+        # STEP 2: Retrieve memory context (RULES, FACTS, EXPERIENCES)
+        enriched_system_prompt = self.base_system_prompt
+        if self.enable_memory and self.enhanced_retrieval:
+            try:
+                # Get all relevant memory
+                retrieved = self.enhanced_retrieval.retrieve_for_task(user_input)
+
+                # Format and inject into prompt
+                memory_section = self.enhanced_retrieval.format_for_prompt(retrieved)
+                if memory_section:
+                    # Inject BEFORE the task
+                    enriched_system_prompt = self.base_system_prompt + "\n" + memory_section
+
+                if self.verbose and (retrieved.get("facts") or retrieved.get("experiences")):
+                    print(f"🧠 Memory retrieved:")
+                    if retrieved.get("facts"):
+                        print(f"   - {len(retrieved['facts'])} fact(s)")
+                    if retrieved.get("experiences"):
+                        print(f"   - {len(retrieved['experiences'])} experience(s)")
+                    if retrieved.get("lessons"):
+                        print(f"   - {len(retrieved['lessons'])} lesson(s)")
+                    print()
+
+            except Exception as e:
+                logger.warning(f"Memory retrieval failed: {e}")
+                enriched_system_prompt = self.base_system_prompt
+
+        # STEP 3: Initialize conversation with enriched prompt
         self.messages = [
             {"role": "system", "content": enriched_system_prompt},
             {"role": "user", "content": user_input}
         ]
 
-        # Run reasoning loop
+        # STEP 4: Run LLM reasoning loop
         try:
             final_response = self._reasoning_loop()
 
-            # Store experience if memory enabled
-            if self.enable_memory and self.learning_manager:
-                self._store_experience(user_input, final_response)
+            # STEP 5: Intelligently store memory (with filtering)
+            if self.enable_memory:
+                self._store_intelligently(user_input, final_response)
 
             # Reset token usage after task completion
             self.current_token_usage = 0
@@ -591,45 +663,119 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
 
         return enriched
 
-    def _store_experience(self, task: str, result: str) -> None:
-        """Store task experience to ChromaDB for future learning.
+    def _load_meta_memory_prompt(self) -> str:
+        """Load the meta-memory system prompt (NEW METHOD).
+
+        Returns:
+            System prompt string
+        """
+        prompt_file = Path("prompts/meta_memory_system_prompt.txt")
+
+        if prompt_file.exists():
+            try:
+                with open(prompt_file, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except Exception as e:
+                logger.warning(f"Failed to load meta-memory prompt: {e}")
+
+        # Fallback to basic prompt if file not found
+        logger.warning("Meta-memory prompt file not found, using fallback")
+        return create_function_calling_system_prompt(self.functions)
+
+    def _store_intelligently(self, user_input: str, agent_response: str) -> None:
+        """Intelligently store memory with filtering (NEW METHOD).
+
+        Uses memory filter to classify and store only valuable information.
 
         Args:
-            task: User's task
-            result: Final response/result
+            user_input: User's input
+            agent_response: Agent's response
         """
-        if not self.learning_manager:
+        if not self.memory_filter or not self.learning_manager:
             return
 
         try:
-            # Determine success based on result
-            success = "error" not in result.lower() and "failed" not in result.lower()
+            # Classify memory type
+            metadata = {
+                "tool_count": len(self.tools_executed),
+                "iteration_count": self.total_iterations,
+            }
 
-            # Build actions list from executed tools
-            actions = [f"{t['tool']}.{t.get('operation', 'execute')}" for t in self.tools_executed]
-
-            # Use learn_from_task method (complete learning cycle)
-            learning_summary = self.learning_manager.learn_from_task(
-                task=task,
-                actions=actions,
-                outcome=result[:500],  # Limit for cost efficiency
-                success=success,
-                errors=None,  # No errors in this context
-                context={
-                    "tool_count": len(self.tools_executed),
-                    "iteration_count": self.total_iterations,
-                    "tools_used": [t["tool"] for t in self.tools_executed]
-                }
+            memory_type = self.memory_filter.classify_memory(
+                user_input=user_input,
+                agent_response=agent_response,
+                task_success=True,
+                metadata=metadata
             )
 
-            if self.verbose:
-                lessons_count = learning_summary.get("lessons_count", 0)
-                print(f"\n💾 Experience stored to semantic memory")
-                if lessons_count > 0:
-                    print(f"   📝 {lessons_count} lesson(s) learned")
+            if memory_type == MemoryType.USELESS:
+                if self.verbose:
+                    print(f"   ⏭️  Memory not stored (classified as useless)")
+                return
+
+            # Store based on type
+            if memory_type == MemoryType.RULE:
+                # Extract rule components
+                rule_components = self.memory_filter.extract_rule_components(user_input)
+                if rule_components and self.rule_engine:
+                    trigger = rule_components["trigger"]
+                    response = rule_components["response"]
+
+                    # Store as rule
+                    rule_id = self.rule_engine.add_rule(
+                        trigger=trigger,
+                        response=response,
+                        trigger_type="contains",
+                        priority=0
+                    )
+
+                    if self.verbose:
+                        print(f"\n🔴 RULE STORED:")
+                        print(f"   Trigger: '{trigger}'")
+                        print(f"   Response: '{response}'")
+
+            elif memory_type == MemoryType.FACT:
+                # Extract fact info
+                fact_info = self.memory_filter.extract_fact_info(user_input)
+                if fact_info:
+                    category = fact_info["category"]
+                    value = fact_info["value"]
+
+                    # Store as fact
+                    fact_id = self.learning_manager.vector_memory.store_fact(
+                        fact=value,
+                        category=category,
+                        metadata={"source": "user_input"}
+                    )
+
+                    if self.verbose:
+                        print(f"\n📋 FACT STORED:")
+                        print(f"   Category: {category}")
+                        print(f"   Value: {value[:60]}...")
+
+            elif memory_type == MemoryType.EXPERIENCE:
+                # Store as experience (using existing logic)
+                success = "error" not in agent_response.lower()
+                actions = [f"{t['tool']}.{t.get('operation', 'execute')}" for t in self.tools_executed]
+
+                learning_summary = self.learning_manager.learn_from_task(
+                    task=user_input,
+                    actions=actions,
+                    outcome=agent_response[:500],
+                    success=success,
+                    errors=None,
+                    context=metadata
+                )
+
+                if self.verbose:
+                    lessons_count = learning_summary.get("lessons_count", 0)
+                    print(f"\n💭 EXPERIENCE STORED:")
+                    print(f"   Success: {success}")
+                    if lessons_count > 0:
+                        print(f"   Lessons: {lessons_count}")
 
         except Exception as e:
-            logger.warning(f"Failed to store experience: {e}")
+            logger.warning(f"Failed to store memory intelligently: {e}")
 
     def get_stats(self) -> Dict[str, Any]:
         """Get orchestrator statistics.
