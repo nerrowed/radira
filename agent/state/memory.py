@@ -64,6 +64,12 @@ class VectorMemory:
                 metadata={"description": "Strategies that worked well"}
             )
 
+            # NEW: Facts collection for long-term user information
+            self.facts = self.client.get_or_create_collection(
+                name="user_facts",
+                metadata={"description": "Long-term facts about the user"}
+            )
+
             self.available = True
             logger.info(f"Vector memory initialized at {self.persist_directory}")
 
@@ -78,7 +84,8 @@ class VectorMemory:
             self._memory_fallback = {
                 "experiences": [],
                 "lessons": [],
-                "strategies": []
+                "strategies": [],
+                "facts": []  # NEW: Facts fallback
             }
 
     def store_experience(
@@ -249,6 +256,54 @@ class VectorMemory:
         logger.info(f"Stored strategy for {task_type}")
         return strategy_id
 
+    def store_fact(
+        self,
+        fact: str,
+        category: str = "general",
+        value: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Store a user fact (NEW METHOD).
+
+        Args:
+            fact: The fact text
+            category: Fact category (name, preference, etc.)
+            value: Optional extracted value
+            metadata: Additional metadata
+
+        Returns:
+            Fact ID
+        """
+        fact_data = {
+            "fact": fact,
+            "category": category,
+            "value": value or fact,
+            "timestamp": datetime.now().isoformat(),
+            **(metadata or {})
+        }
+
+        fact_id = f"fact_{datetime.now().timestamp()}"
+
+        document = f"Category: {category}\nFact: {fact}"
+        if value:
+            document += f"\nValue: {value}"
+
+        if self.available:
+            self.facts.add(
+                documents=[document],
+                metadatas=[fact_data],
+                ids=[fact_id]
+            )
+        else:
+            self._memory_fallback["facts"].append({
+                "id": fact_id,
+                "document": document,
+                "metadata": fact_data
+            })
+
+        logger.info(f"Stored fact [{category}]: {fact[:50]}")
+        return fact_id
+
     def recall_similar_experiences(
         self,
         query: str,
@@ -379,6 +434,7 @@ class VectorMemory:
                 "total_experiences": self.experiences.count(),
                 "total_lessons": self.lessons.count(),
                 "total_strategies": self.strategies.count(),
+                "total_facts": self.facts.count(),  # NEW
                 "storage_path": self.persist_directory,
                 "backend": "chromadb"
             }
@@ -387,6 +443,7 @@ class VectorMemory:
                 "total_experiences": len(self._memory_fallback["experiences"]),
                 "total_lessons": len(self._memory_fallback["lessons"]),
                 "total_strategies": len(self._memory_fallback["strategies"]),
+                "total_facts": len(self._memory_fallback["facts"]),  # NEW
                 "storage_path": self.persist_directory,
                 "backend": "fallback"
             }
