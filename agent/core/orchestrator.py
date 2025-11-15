@@ -11,6 +11,7 @@ from agent.tools.registry import ToolRegistry, get_registry
 from agent.tools.base import ToolResult, ToolStatus
 from agent.state.session import SessionManager, get_session_manager
 from agent.learning.learning_manager import LearningManager, get_learning_manager
+from agent.learning.task_importance_filter import get_task_importance_filter
 from agent.state.context_tracker import ContextTracker, get_context_tracker
 from agent.core.intent_understanding import IntentUnderstanding, get_intent_understanding
 from agent.core.pre_action_reflection import PreActionReflection, get_pre_action_reflection
@@ -558,8 +559,28 @@ Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
             # Get task
             task = self.current_task or "Unknown task"
 
+            # TASK IMPORTANCE FILTER: Check if task is worthy of learning
+            importance_filter = get_task_importance_filter()
+            should_learn, importance_level, reason = importance_filter.should_learn(
+                task=task,
+                actions=actions,
+                outcome=outcome,
+                success=success,
+                errors=self.errors_encountered,
+                context={
+                    "iterations": self.iteration,
+                    "max_iterations": self.max_iterations
+                }
+            )
+
+            if not should_learn:
+                logger.debug(f"Skipping learning for trivial task: {reason}")
+                if self.verbose:
+                    print(f"\n⏭️  Skipped reflection (task importance: {importance_level.value})")
+                return
+
             if self.verbose:
-                print(f"\n🧠 Reflecting on execution...")
+                print(f"\n🧠 Reflecting on execution (importance: {importance_level.value})...")
 
             # Learn from task
             learning_summary = self.learning_manager.learn_from_task(
@@ -570,7 +591,8 @@ Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
                 errors=self.errors_encountered,
                 context={
                     "iterations": self.iteration,
-                    "max_iterations": self.max_iterations
+                    "max_iterations": self.max_iterations,
+                    "importance_level": importance_level.value
                 }
             )
 

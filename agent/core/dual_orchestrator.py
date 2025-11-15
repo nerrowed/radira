@@ -19,6 +19,7 @@ from agent.tools.registry import ToolRegistry, get_registry
 from agent.tools.base import ToolResult, ToolStatus
 from agent.state.session import SessionManager, get_session_manager
 from agent.learning.learning_manager import LearningManager, get_learning_manager
+from agent.learning.task_importance_filter import get_task_importance_filter
 from agent.state.context_tracker import ContextTracker, get_context_tracker
 from agent.core.task_classifier import TaskClassifier, TaskType, get_task_classifier
 from agent.core.answer_validator import AnswerValidator, get_answer_validator
@@ -864,13 +865,31 @@ Final Answer: File halo.txt has been created successfully with the content you r
             return
 
         try:
-            self.learning_manager.learn_from_task(
+            # TASK IMPORTANCE FILTER: Most simple tasks are trivial
+            importance_filter = get_task_importance_filter()
+            should_learn, importance_level, reason = importance_filter.should_learn(
                 task=task,
                 actions=["direct_response"],
                 outcome=answer,
                 success=success,
                 errors=[],
                 context={"task_type": self.task_type.value if self.task_type else "unknown"}
+            )
+
+            if not should_learn:
+                logger.debug(f"Skipping learning for trivial simple task: {reason}")
+                return
+
+            self.learning_manager.learn_from_task(
+                task=task,
+                actions=["direct_response"],
+                outcome=answer,
+                success=success,
+                errors=[],
+                context={
+                    "task_type": self.task_type.value if self.task_type else "unknown",
+                    "importance_level": importance_level.value
+                }
             )
         except Exception as e:
             logger.warning(f"Failed to learn from simple task: {e}")
@@ -889,8 +908,28 @@ Final Answer: File halo.txt has been created successfully with the content you r
             actions = [action for action, _ in self.history]
             task = self.current_task or "Unknown task"
 
+            # TASK IMPORTANCE FILTER: Check if task is worthy of learning
+            importance_filter = get_task_importance_filter()
+            should_learn, importance_level, reason = importance_filter.should_learn(
+                task=task,
+                actions=actions,
+                outcome=outcome,
+                success=success,
+                errors=self.errors_encountered,
+                context={
+                    "iterations": self.iteration,
+                    "task_type": self.task_type.value if self.task_type else "unknown"
+                }
+            )
+
+            if not should_learn:
+                logger.debug(f"Skipping learning for trivial task: {reason}")
+                if self.verbose:
+                    print(f"\n⏭️  Skipped reflection (task importance: {importance_level.value})\n")
+                return
+
             if self.verbose:
-                print(f"\n🧠 Reflecting on execution...\n")
+                print(f"\n🧠 Reflecting on execution (importance: {importance_level.value})...\n")
 
             learning_summary = self.learning_manager.learn_from_task(
                 task=task,
@@ -900,7 +939,8 @@ Final Answer: File halo.txt has been created successfully with the content you r
                 errors=self.errors_encountered,
                 context={
                     "iterations": self.iteration,
-                    "task_type": self.task_type.value if self.task_type else "unknown"
+                    "task_type": self.task_type.value if self.task_type else "unknown",
+                    "importance_level": importance_level.value
                 }
             )
 

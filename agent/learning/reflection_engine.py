@@ -270,23 +270,28 @@ class ReflectionEngine:
         lessons = []
 
         if success:
-            # Lesson from success
-            if len(actions) <= 3:
-                lessons.append({
-                    "lesson": "Simple tasks can be solved with direct, minimal actions",
-                    "category": "efficiency",
-                    "importance": 0.7,
-                    "context": f"Task '{task[:50]}...' succeeded with {len(actions)} actions"
-                })
+            # REMOVED TRIVIAL LESSON: "Simple tasks can be solved with direct, minimal actions"
+            # This was creating noise in the memory system.
+            # Only extract lessons that provide real insights.
 
-            # Check for good patterns
+            # Lesson: Information gathering strategy (only if it was actually useful)
             actions_str = " ".join(actions).lower()
-            if "search" in actions_str or "list" in actions_str:
+            if ("search" in actions_str or "list" in actions_str) and len(actions) > 2:
+                # Only extract this lesson if there were multiple steps
                 lessons.append({
-                    "lesson": "Gathering information before acting leads to success",
+                    "lesson": "Gathering information before acting improves success rate",
                     "category": "strategy",
                     "importance": 0.8,
-                    "context": "Used information gathering before main action"
+                    "context": f"Used information gathering in multi-step task: {task[:50]}..."
+                })
+
+            # Lesson: Efficient multi-step execution (only for complex tasks)
+            if len(actions) >= 4 and len(actions) <= 6:
+                lessons.append({
+                    "lesson": "Breaking complex tasks into 4-6 steps leads to efficient execution",
+                    "category": "efficiency",
+                    "importance": 0.75,
+                    "context": f"Successfully completed task with {len(actions)} well-structured steps"
                 })
 
         else:

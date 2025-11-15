@@ -10,6 +10,7 @@ from datetime import datetime
 
 from agent.state.memory import get_vector_memory, VectorMemory
 from agent.learning.reflection_engine import get_reflection_engine, ReflectionEngine
+from agent.learning.task_importance_filter import get_task_importance_filter
 from agent.state.error_memory import ErrorMemory
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,33 @@ class LearningManager:
         errors = errors or []
         context = context or {}
 
-        logger.info(f"Learning from task: {task[:50]}... Success: {success}")
+        # DEFENSIVE LAYER: Task Importance Filter
+        # This is a fail-safe in case orchestrators bypass the filter
+        importance_filter = get_task_importance_filter()
+        should_learn, importance_level, reason = importance_filter.should_learn(
+            task=task,
+            actions=actions,
+            outcome=outcome,
+            success=success,
+            errors=errors,
+            context=context
+        )
+
+        if not should_learn:
+            logger.info(f"Skipping learning (defensive layer): {reason}")
+            return {
+                "experience_id": None,
+                "lessons_count": 0,
+                "strategies_count": 0,
+                "reflection": {},
+                "improvements_suggested": [],
+                "skipped": True,
+                "skip_reason": reason,
+                "importance_level": importance_level.value,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        logger.info(f"Learning from task: {task[:50]}... Success: {success}, Importance: {importance_level.value}")
 
         # Step 1: Reflect on what happened
         reflection_result = self.reflection.reflect_on_task(

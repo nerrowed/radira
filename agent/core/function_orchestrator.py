@@ -29,6 +29,7 @@ from config.settings import settings
 from agent.core.rule_engine import get_rule_engine
 from agent.state.memory_filter import get_memory_filter, MemoryType
 from agent.state.retrieval import get_enhanced_retrieval
+from agent.learning.task_importance_filter import get_task_importance_filter
 
 logger = logging.getLogger(__name__)
 
@@ -758,7 +759,9 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
                 success = "error" not in agent_response.lower()
                 actions = [f"{t['tool']}.{t.get('operation', 'execute')}" for t in self.tools_executed]
 
-                learning_summary = self.learning_manager.learn_from_task(
+                # TASK IMPORTANCE FILTER: Check if experience is worthy of learning
+                importance_filter = get_task_importance_filter()
+                should_learn, importance_level, reason = importance_filter.should_learn(
                     task=user_input,
                     actions=actions,
                     outcome=agent_response[:500],
@@ -767,9 +770,24 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
                     context=metadata
                 )
 
+                if not should_learn:
+                    logger.debug(f"Skipping learning for trivial experience: {reason}")
+                    if self.verbose:
+                        print(f"   ⏭️  Experience not stored (importance: {importance_level.value})")
+                    return
+
+                learning_summary = self.learning_manager.learn_from_task(
+                    task=user_input,
+                    actions=actions,
+                    outcome=agent_response[:500],
+                    success=success,
+                    errors=None,
+                    context={**metadata, "importance_level": importance_level.value}
+                )
+
                 if self.verbose:
                     lessons_count = learning_summary.get("lessons_count", 0)
-                    print(f"\n💭 EXPERIENCE STORED:")
+                    print(f"\n💭 EXPERIENCE STORED (importance: {importance_level.value}):")
                     print(f"   Success: {success}")
                     if lessons_count > 0:
                         print(f"   Lessons: {lessons_count}")
