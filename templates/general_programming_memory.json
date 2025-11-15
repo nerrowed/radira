@@ -1,0 +1,181 @@
+{
+  "lessons": [
+    {
+      "lesson": "Always check if file exists before attempting to read or write",
+      "context": "File operations - Error prevention",
+      "category": "error_prevention",
+      "importance": 0.95
+    },
+    {
+      "lesson": "Use try-except blocks for operations that can fail (file I/O, network, etc)",
+      "context": "Error handling - Robustness",
+      "category": "best_practice",
+      "importance": 0.9
+    },
+    {
+      "lesson": "Write unit tests before refactoring code to ensure functionality is preserved",
+      "context": "Testing - Refactoring safety",
+      "category": "quality_assurance",
+      "importance": 0.85
+    },
+    {
+      "lesson": "Use meaningful variable and function names that describe their purpose",
+      "context": "Code quality - Readability",
+      "category": "best_practice",
+      "importance": 0.8
+    },
+    {
+      "lesson": "Never commit sensitive data (passwords, API keys, tokens) to version control",
+      "context": "Security - Version control",
+      "category": "security",
+      "importance": 1.0
+    },
+    {
+      "lesson": "Always validate and sanitize user input before processing",
+      "context": "Security - Input validation",
+      "category": "security",
+      "importance": 0.95
+    },
+    {
+      "lesson": "Use environment variables for configuration, not hardcoded values",
+      "context": "Configuration management - Flexibility",
+      "category": "best_practice",
+      "importance": 0.85
+    },
+    {
+      "lesson": "Document complex logic with comments explaining 'why', not 'what'",
+      "context": "Code documentation - Maintainability",
+      "category": "best_practice",
+      "importance": 0.75
+    },
+    {
+      "lesson": "Run tests before committing code to ensure nothing is broken",
+      "context": "Development workflow - Quality control",
+      "category": "quality_assurance",
+      "importance": 0.9
+    },
+    {
+      "lesson": "Use version control and commit frequently with descriptive messages",
+      "context": "Development workflow - Version control",
+      "category": "best_practice",
+      "importance": 0.85
+    }
+  ],
+  "strategies": [
+    {
+      "strategy": "Read requirements → Design solution → Implement → Test → Review → Deploy",
+      "task_type": "software_development",
+      "success_rate": 0.88,
+      "context": "Complete software development lifecycle"
+    },
+    {
+      "strategy": "Reproduce bug → Identify root cause → Fix → Write test → Verify fix",
+      "task_type": "debugging",
+      "success_rate": 0.9,
+      "context": "Systematic debugging approach"
+    },
+    {
+      "strategy": "Read existing code → Write tests → Refactor → Run tests → Verify behavior unchanged",
+      "task_type": "refactoring",
+      "success_rate": 0.92,
+      "context": "Safe refactoring workflow with test coverage"
+    },
+    {
+      "strategy": "Check file exists → Read file → Validate content → Process → Handle errors",
+      "task_type": "file_processing",
+      "success_rate": 0.95,
+      "context": "Robust file processing with error handling"
+    },
+    {
+      "strategy": "Write tests → Implement feature → Run tests → Fix failures → Refactor → Deploy",
+      "task_type": "tdd_development",
+      "success_rate": 0.87,
+      "context": "Test-driven development workflow"
+    },
+    {
+      "strategy": "Review requirements → Ask clarifying questions → Implement → Get feedback → Iterate",
+      "task_type": "feature_implementation",
+      "success_rate": 0.85,
+      "context": "Iterative feature development with feedback"
+    }
+  ],
+  "experiences": [
+    {
+      "task": "Fix FileNotFoundError in data processing script",
+      "actions": [
+        "reproduce_error",
+        "identify_missing_file_check",
+        "add_file_existence_validation",
+        "add_error_message",
+        "test_with_missing_file",
+        "test_with_existing_file",
+        "verify_fix"
+      ],
+      "outcome": "Successfully added file existence check with clear error message. Script now handles missing files gracefully.",
+      "success": true,
+      "metadata": {
+        "category": "debugging",
+        "complexity": "low",
+        "error_type": "FileNotFoundError"
+      }
+    },
+    {
+      "task": "Refactor legacy code to improve readability and maintainability",
+      "actions": [
+        "write_tests_for_existing_code",
+        "identify_code_smells",
+        "extract_functions",
+        "rename_variables",
+        "simplify_logic",
+        "run_tests",
+        "verify_behavior_unchanged"
+      ],
+      "outcome": "Reduced code complexity by 40%. All tests passing. Code is now much more readable.",
+      "success": true,
+      "metadata": {
+        "category": "refactoring",
+        "complexity": "medium",
+        "improvement": "40% complexity reduction"
+      }
+    },
+    {
+      "task": "Implement user authentication system with JWT",
+      "actions": [
+        "research_jwt_best_practices",
+        "design_authentication_flow",
+        "implement_user_model",
+        "implement_token_generation",
+        "implement_token_validation",
+        "add_middleware",
+        "write_tests",
+        "test_authentication_flow"
+      ],
+      "outcome": "Successfully implemented secure JWT authentication. All security best practices followed. Tests passing.",
+      "success": true,
+      "metadata": {
+        "category": "feature_implementation",
+        "complexity": "high",
+        "technologies": ["JWT", "Authentication"]
+      }
+    },
+    {
+      "task": "Optimize slow database query causing performance issues",
+      "actions": [
+        "profile_application",
+        "identify_slow_query",
+        "analyze_query_plan",
+        "add_database_index",
+        "optimize_query",
+        "measure_performance",
+        "verify_results"
+      ],
+      "outcome": "Reduced query time from 5s to 0.2s by adding proper index. 96% performance improvement.",
+      "success": true,
+      "metadata": {
+        "category": "optimization",
+        "complexity": "medium",
+        "performance_gain": "96%"
+      }
+    }
+  ]
+}

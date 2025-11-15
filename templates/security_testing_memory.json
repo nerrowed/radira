@@ -1,0 +1,131 @@
+{
+  "lessons": [
+    {
+      "lesson": "Always get written authorization before conducting any penetration test",
+      "context": "Security testing - Legal & ethical",
+      "category": "security",
+      "importance": 1.0
+    },
+    {
+      "lesson": "Never use real credentials or production data in security tests",
+      "context": "Security testing - Safety",
+      "category": "security",
+      "importance": 1.0
+    },
+    {
+      "lesson": "Document all findings immediately to avoid forgetting critical vulnerabilities",
+      "context": "Security testing - Documentation",
+      "category": "best_practice",
+      "importance": 0.9
+    },
+    {
+      "lesson": "Start with passive reconnaissance before active scanning",
+      "context": "Security testing - Methodology",
+      "category": "best_practice",
+      "importance": 0.85
+    },
+    {
+      "lesson": "Always verify findings manually - automated tools can have false positives",
+      "context": "Security testing - Validation",
+      "category": "quality_assurance",
+      "importance": 0.95
+    },
+    {
+      "lesson": "Rate limit your scans to avoid triggering DOS protection or crashing services",
+      "context": "Security testing - Rate limiting",
+      "category": "error_prevention",
+      "importance": 0.9
+    },
+    {
+      "lesson": "Check for OWASP Top 10 vulnerabilities systematically",
+      "context": "Security testing - Web applications",
+      "category": "best_practice",
+      "importance": 0.88
+    }
+  ],
+  "strategies": [
+    {
+      "strategy": "Reconnaissance → Scanning → Enumeration → Exploitation → Reporting",
+      "task_type": "penetration_testing",
+      "success_rate": 0.92,
+      "context": "Standard pentesting methodology"
+    },
+    {
+      "strategy": "Identify vulnerability → Verify manually → Test exploit → Document → Suggest remediation",
+      "task_type": "vulnerability_assessment",
+      "success_rate": 0.9,
+      "context": "Vulnerability validation and reporting workflow"
+    },
+    {
+      "strategy": "Passive recon → Active scanning → Manual testing → Exploit development → Privilege escalation",
+      "task_type": "security_testing",
+      "success_rate": 0.85,
+      "context": "Comprehensive security assessment approach"
+    },
+    {
+      "strategy": "Review source → Test authentication → Check authorization → Test input validation → Check for sensitive data exposure",
+      "task_type": "code_security_review",
+      "success_rate": 0.88,
+      "context": "Application security code review process"
+    }
+  ],
+  "experiences": [
+    {
+      "task": "Conduct security assessment of web application",
+      "actions": [
+        "passive_reconnaissance",
+        "port_scanning",
+        "service_enumeration",
+        "vulnerability_scanning",
+        "manual_testing",
+        "exploit_verification",
+        "generate_report"
+      ],
+      "outcome": "Identified 3 high-severity and 7 medium-severity vulnerabilities. All findings verified and documented.",
+      "success": true,
+      "metadata": {
+        "category": "security_testing",
+        "complexity": "high",
+        "vulnerabilities_found": 10,
+        "duration_hours": 8
+      }
+    },
+    {
+      "task": "Test for SQL injection vulnerabilities in login form",
+      "actions": [
+        "identify_input_points",
+        "test_basic_payloads",
+        "test_advanced_payloads",
+        "verify_vulnerability",
+        "test_exploitation",
+        "document_findings"
+      ],
+      "outcome": "Confirmed SQL injection in username field. Successfully extracted database schema. Recommended parameterized queries.",
+      "success": true,
+      "metadata": {
+        "category": "vulnerability_testing",
+        "complexity": "medium",
+        "severity": "critical",
+        "vulnerability_type": "SQL Injection"
+      }
+    },
+    {
+      "task": "Assess API security and test for broken authentication",
+      "actions": [
+        "enumerate_endpoints",
+        "test_authentication_bypass",
+        "test_jwt_vulnerabilities",
+        "test_rate_limiting",
+        "test_authorization",
+        "document_findings"
+      ],
+      "outcome": "Found weak JWT implementation allowing token manipulation. No rate limiting on login endpoint. Provided detailed remediation steps.",
+      "success": true,
+      "metadata": {
+        "category": "api_security",
+        "complexity": "high",
+        "vulnerabilities_found": 2
+      }
+    }
+  ]
+}
