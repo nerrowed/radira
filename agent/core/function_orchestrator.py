@@ -165,12 +165,12 @@ class FunctionOrchestrator:
 
             # Call LLM with functions
             # Lower temperature for more deterministic function calling
-            # Lower max_tokens to discourage generating code directly
+            # Sufficient max_tokens for complete function arguments (including long code)
             response = self.llm.chat_with_functions(
                 messages=self.messages,
                 functions=self.functions,
                 temperature=0.1,  # Very low temperature for strict function calling
-                max_tokens=512,   # Limit tokens to force function calls (not code generation)
+                max_tokens=3072,  # Enough for complete function calls with long code arguments
                 tool_choice="auto"
             )
 
@@ -249,8 +249,8 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
                     retry_response = self.llm.chat_with_functions(
                         messages=self.messages,
                         functions=self.functions,
-                        temperature=0.1,  # Very low temperature
-                        max_tokens=512,   # Even lower tokens
+                        temperature=0.05,  # Even lower temperature for retry
+                        max_tokens=3072,   # Same as initial attempt
                         tool_choice="auto"  # Force tool use if possible
                     )
 
