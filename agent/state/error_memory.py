@@ -51,7 +51,8 @@ class ErrorMemory:
                 path=str(chroma_dir),
                 settings=ChromaSettings(
                     anonymized_telemetry=False,
-                    allow_reset=True
+                    allow_reset=True,
+                    chroma_telemetry_impl="none"
                 )
             )
 
