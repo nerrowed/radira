@@ -570,15 +570,34 @@ Remember: Your interface is FUNCTION CALLING, not text generation!
         """Truncate long tool results to prevent context overflow.
 
         Args:
-            max_length: Maximum length for tool result content
+            max_length: Maximum length for tool result content (default for most tools)
         """
+        # Tools that produce large outputs and should NOT be truncated aggressively
+        # (user needs full results for saving to files, analysis, etc.)
+        LARGE_OUTPUT_TOOLS = {
+            "enhanced_pentest": 20000,   # Pentest scans can have 100+ results
+            "pentest": 20000,            # Legacy pentest tool
+            "web_search": 5000,          # Search results need context
+            "filesystem_read": 10000,    # File contents may be long
+        }
+
         for msg in self.messages:
             if msg.get("role") == "tool":
+                tool_name = msg.get("name", "")
                 content = msg.get("content", "")
-                if len(content) > max_length:
+
+                # Determine max length based on tool type
+                tool_max_length = LARGE_OUTPUT_TOOLS.get(tool_name, max_length)
+
+                if len(content) > tool_max_length:
                     # Truncate and add indicator
-                    truncated = content[:max_length] + f"\n\n[...truncated {len(content) - max_length} chars]"
+                    truncated = content[:tool_max_length] + f"\n\n[...truncated {len(content) - tool_max_length} chars for context management. Full results are available in the tool's working directory.]"
                     msg["content"] = truncated
+
+                    if self.verbose:
+                        logger.debug(
+                            f"Truncated {tool_name} result: {len(content)} → {tool_max_length} chars"
+                        )
 
     def run_with_learning(self, user_input: str) -> str:
         """Run with learning system integration (deprecated - use run with enable_memory=True).
