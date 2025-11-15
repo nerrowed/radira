@@ -23,7 +23,7 @@ class FileSystemTool(BaseTool):
             working_directory: Base directory for operations (default from settings)
         """
         super().__init__()
-        self.working_dir = Path(working_directory or settings.working_directory)
+        self.working_dir = Path(working_directory or settings.working_directory).resolve()
         self.working_dir.mkdir(parents=True, exist_ok=True)
 
         # Safety settings
@@ -357,11 +357,26 @@ class FileSystemTool(BaseTool):
             for item in sorted(path.iterdir()):
                 item_type = "dir" if item.is_dir() else "file"
                 size = item.stat().st_size if item.is_file() else 0
+                
+                # Resolve item path to handle symlinks
+                try:
+                    item_resolved = item.resolve()
+                    # Try to get relative path, fallback to absolute if outside workspace
+                    try:
+                        relative_path = str(item_resolved.relative_to(self.working_dir))
+                    except ValueError:
+                        # Item is outside workspace (symlink or absolute path issue)
+                        # Use relative path from the directory being listed instead
+                        relative_path = str(item.relative_to(path))
+                except Exception:
+                    # Fallback: use item name if resolution fails
+                    relative_path = item.name
+                
                 items.append({
                     "name": item.name,
                     "type": item_type,
                     "size": size,
-                    "path": str(item.relative_to(self.working_dir))
+                    "path": relative_path
                 })
 
             return ToolResult(
@@ -449,9 +464,23 @@ class FileSystemTool(BaseTool):
             matches = []
             for item in path.rglob(pattern):
                 if item.is_file():
+                    # Resolve item path to handle symlinks
+                    try:
+                        item_resolved = item.resolve()
+                        # Try to get relative path, fallback to absolute if outside workspace
+                        try:
+                            relative_path = str(item_resolved.relative_to(self.working_dir))
+                        except ValueError:
+                            # Item is outside workspace (symlink or absolute path issue)
+                            # Use relative path from the search directory instead
+                            relative_path = str(item.relative_to(path))
+                    except Exception:
+                        # Fallback: use item name if resolution fails
+                        relative_path = item.name
+                    
                     matches.append({
                         "name": item.name,
-                        "path": str(item.relative_to(self.working_dir)),
+                        "path": relative_path,
                         "size": item.stat().st_size
                     })
 

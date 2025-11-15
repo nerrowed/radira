@@ -50,7 +50,8 @@ class SelfImprovementSuggester:
             if not all_experiences or not all_experiences.get('metadatas'):
                 return {
                     "message": "Not enough data yet - need to complete more tasks",
-                    "experiences_count": 0
+                    "total_experiences": 0,
+                    "error": False
                 }
 
             experiences = all_experiences['metadatas']
@@ -98,7 +99,7 @@ class SelfImprovementSuggester:
         """
         analysis = self.analyze_performance()
 
-        if analysis.get("error") or analysis.get("experiences_count", 0) == 0:
+        if analysis.get("error") or analysis.get("total_experiences", 0) == 0:
             return [
                 {
                     "suggestion": "Complete more tasks to gather learning data",

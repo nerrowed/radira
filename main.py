@@ -14,6 +14,10 @@ from rich.panel import Panel
 from rich.logging import RichHandler
 from rich.prompt import Prompt
 
+# Reduce ChromaDB verbose logging (INFO messages about collection creation)
+logging.getLogger("chromadb.api.segment").setLevel(logging.WARNING)
+logging.getLogger("chromadb").setLevel(logging.WARNING)
+
 from agent.llm.groq_client import get_groq_client
 from agent.tools.registry import get_registry
 from config.settings import settings

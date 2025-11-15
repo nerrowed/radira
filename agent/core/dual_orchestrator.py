@@ -201,10 +201,15 @@ Berikan respons natural dan ramah dalam 1-2 kalimat. Jika user menanyakan percak
             if self.enable_learning and self.learning_manager:
                 self._learn_from_simple_task(task, answer, success=True)
 
+            # Reset token usage after task completion
+            self.llm.reset_token_stats()
+
             return answer
 
         except Exception as e:
             logger.error(f"Conversational handling failed: {e}")
+            # Reset token usage after task completion
+            self.llm.reset_token_stats()
             return "Maaf, ada error saat memproses permintaan kamu."
 
     def _handle_simple_qa(self, task: str) -> str:
@@ -258,10 +263,15 @@ Jawab dengan jelas dan ringkas berdasarkan pengetahuanmu. Jika ada konteks di at
             if self.enable_learning and self.learning_manager:
                 self._learn_from_simple_task(task, answer, success=True)
 
+            # Reset token usage after task completion
+            self.llm.reset_token_stats()
+
             return answer
 
         except Exception as e:
             logger.error(f"Simple QA handling failed: {e}")
+            # Reset token usage after task completion
+            self.llm.reset_token_stats()
             return f"Maaf, ada error: {str(e)}"
 
     def _react_loop(
@@ -362,6 +372,7 @@ Jawab dengan jelas dan ringkas berdasarkan pengetahuanmu. Jika ada konteks di at
                         logger.warning(f"Token budget exceeded: {total_tokens_used}/{settings.max_total_tokens_per_task}")
                         if self.verbose:
                             print(f"⚠️  Token budget exceeded: {total_tokens_used}/{settings.max_total_tokens_per_task}\n")
+                        # Reset will be done in _force_conclusion
                         return self._force_conclusion(task)
 
                     if self.verbose:
@@ -384,12 +395,18 @@ Jawab dengan jelas dan ringkas berdasarkan pengetahuanmu. Jika ada konteks di at
                             time.sleep(wait_time)
                         else:
                             logger.error(f"Max retries reached")
+                            # Reset token usage after task completion
+                            self.llm.reset_token_stats()
                             return f"Error: Rate limit exceeded after {max_retries} retries."
                     else:
                         logger.error(f"LLM error: {e}")
+                        # Reset token usage after task completion
+                        self.llm.reset_token_stats()
                         return f"Error: {str(e)}"
 
             if response_text is None:
+                # Reset token usage after task completion
+                self.llm.reset_token_stats()
                 return "Error: Failed to get response"
 
             # Parse response
@@ -433,6 +450,9 @@ Jawab dengan jelas dan ringkas berdasarkan pengetahuanmu. Jika ada konteks di at
                 # Learn from success
                 if self.enable_learning and self.learning_manager:
                     self._learn_from_execution(success=True, outcome=final_answer)
+
+                # Reset token usage after task completion
+                self.llm.reset_token_stats()
 
                 return final_answer
 
@@ -638,6 +658,9 @@ Final Answer: File halo.txt has been created successfully with the content you r
             if self.enable_learning and self.learning_manager:
                 self._learn_from_execution(success=True, outcome=answer)
 
+            # Reset token usage after task completion
+            self.llm.reset_token_stats()
+
             return answer
 
         # Otherwise, summarize what we've done
@@ -670,6 +693,9 @@ Final Answer: File halo.txt has been created successfully with the content you r
         # Learn from incomplete task
         if self.enable_learning and self.learning_manager:
             self._learn_from_execution(success=False, outcome=outcome)
+
+        # Reset token usage after task completion
+        self.llm.reset_token_stats()
 
         return outcome
 

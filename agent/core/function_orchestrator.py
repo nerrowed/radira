@@ -124,10 +124,19 @@ class FunctionOrchestrator:
             if self.enable_memory and self.learning_manager:
                 self._store_experience(user_input, final_response)
 
+            # Reset token usage after task completion
+            self.current_token_usage = 0
+            self.total_tokens_used = 0
+            self.llm.reset_token_stats()
+
             return final_response
 
         except Exception as e:
             logger.error(f"Orchestrator error: {e}", exc_info=True)
+            # Reset token usage after task completion
+            self.current_token_usage = 0
+            self.total_tokens_used = 0
+            self.llm.reset_token_stats()
             return f"Maaf, terjadi error: {str(e)}"
 
     def _reasoning_loop(self) -> str:
@@ -214,6 +223,7 @@ class FunctionOrchestrator:
                     print(f"   Returning partial response...")
 
                 final_content = response.get("content")
+                # Reset token usage will be done in run() method
                 return final_content or "Task completed (with fallback)."
 
             else:
@@ -225,6 +235,7 @@ class FunctionOrchestrator:
                     print(f"   Total iterations: {iteration}")
                     print(f"   Total tool calls: {self.total_tool_calls}")
 
+                # Reset token usage will be done in run() method
                 return final_content or "Task completed."
 
         # Max iterations reached
@@ -245,6 +256,7 @@ class FunctionOrchestrator:
             tool_choice="none"  # Force text response
         )
 
+        # Reset token usage will be done in run() method
         return response.get("content") or "Task completed with max iterations."
 
     def _execute_tool_call(self, tool_call: Dict[str, Any]) -> None:

@@ -221,6 +221,8 @@ Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
                         logger.warning(f"Token budget exceeded: {total_tokens_used}/{settings.max_total_tokens_per_task}")
                         if self.verbose:
                             print(f"⚠️  Token budget exceeded: {total_tokens_used}/{settings.max_total_tokens_per_task}\n")
+                        # Reset token usage after task completion
+                        self.llm.reset_token_stats()
                         return f"Task stopped: Token budget exceeded ({total_tokens_used} tokens used, limit: {settings.max_total_tokens_per_task})"
 
                     if self.verbose:
@@ -245,13 +247,19 @@ Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
                             time.sleep(wait_time)
                         else:
                             logger.error(f"Max retries reached for rate limit")
+                            # Reset token usage after task completion
+                            self.llm.reset_token_stats()
                             return f"Error: Rate limit exceeded after {max_retries} retries. Please wait and try again."
                     else:
                         # Other errors, fail immediately
                         logger.error(f"LLM error: {e}")
+                        # Reset token usage after task completion
+                        self.llm.reset_token_stats()
                         return f"Error: Failed to get response from LLM: {str(e)}"
 
             if response_text is None:
+                # Reset token usage after task completion
+                self.llm.reset_token_stats()
                 return "Error: Failed to get response after retries"
 
             # Parse response
@@ -298,6 +306,9 @@ Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
                         success=True,
                         outcome=final_answer
                     )
+
+                # Reset token usage after task completion
+                self.llm.reset_token_stats()
 
                 return final_answer
 
@@ -363,6 +374,9 @@ Failure Behavior: {intent_analysis.expected_outcome.failure_behavior}"""
                 success=False,
                 outcome=outcome
             )
+
+        # Reset token usage after task completion
+        self.llm.reset_token_stats()
 
         return outcome
 

@@ -601,6 +601,9 @@ class GroqClient:
                 # Fallback: return raw string
                 arguments = {"raw": arguments_str}
 
+            # Normalize boolean values (convert string "true"/"false" to boolean)
+            arguments = self._normalize_arguments(arguments, function_name)
+
             return {
                 "function_name": function_name,
                 "arguments": arguments,
@@ -612,6 +615,49 @@ class GroqClient:
                 f"Invalid tool call format: missing key {e}",
                 details={"tool_call": tool_call}
             )
+
+    def _normalize_arguments(self, arguments: Dict[str, Any], function_name: str) -> Dict[str, Any]:
+        """Normalize arguments to match expected types.
+        
+        Converts string booleans ("true"/"false") to Python booleans.
+        This handles cases where LLM sends string instead of boolean.
+        
+        Args:
+            arguments: Parsed arguments dict
+            function_name: Function name (for context)
+            
+        Returns:
+            Normalized arguments dict
+        """
+        from agent.tools.registry import get_registry
+        
+        normalized = arguments.copy()
+        
+        try:
+            # Get tool to check parameter types
+            registry = get_registry()
+            tool = registry.get(function_name)
+            tool_params = tool.parameters if tool else {}
+            
+            # Normalize each argument based on expected type
+            for param_name, param_value in arguments.items():
+                if param_name in tool_params:
+                    expected_type = tool_params[param_name].get("type", "string")
+                    
+                    # Convert string boolean to Python boolean
+                    if expected_type == "boolean" and isinstance(param_value, str):
+                        param_lower = param_value.lower().strip()
+                        if param_lower == "true":
+                            normalized[param_name] = True
+                        elif param_lower == "false":
+                            normalized[param_name] = False
+                        # Otherwise keep original value
+                        
+        except Exception as e:
+            # If normalization fails, log warning but continue with original arguments
+            logger.debug(f"Argument normalization failed for {function_name}: {e}")
+        
+        return normalized
 
     def get_token_stats(self) -> Dict[str, int]:
         """Get cumulative token usage statistics.

@@ -1,40 +1,33 @@
-# AI Autonomous Agent - Dependencies
-
 # Core - Groq AI API
-groq==0.11.0  # Pinned for stability
+groq==0.11.0
 
-# Core - LangChain Framework
-langchain==0.1.20  # Pinned for stability
-langchain-groq==0.0.3  # Pinned for stability
+# LangChain
+langchain==0.1.20
 
-# Core - Environment & Config
-python-dotenv==1.0.1  # Pinned for stability
-pydantic==2.6.1  # Required for settings validation
-pydantic-settings==2.1.0  # Required for BaseSettings (Pydantic v2)
+# Core Utilities
+python-dotenv==1.0.1
+pydantic==2.6.1
+pydantic-settings==2.1.0
+rich==13.7.0
 
-# Core - Beautiful CLI Output
-rich==13.7.0  # Pinned for stability
-
-# Optional - Web Framework (for API server - Phase 4)
+# Optional - API server
 fastapi==0.109.2
 uvicorn==0.27.1
 
-# Optional - Database & Cache (for state management - Phase 3)
+# Optional - Database
 redis==5.0.1
 psycopg2-binary==2.9.9
 sqlalchemy==2.0.25
 
-# Optional - Vector Database (for memory/learning - Phase 3)
-chromadb==0.4.24
-sentence-transformers==2.5.1
+# Vector DB (CPU safe, no CUDA)
+chromadb==0.5.0
+posthog<3.0.0  # Pin PostHog to v2.x for ChromaDB 0.5.0 compatibility
 
-# Optional - Task Queue (for async operations - Phase 4)
+# Task Queue
 celery==5.3.6
 
-# Optional - Additional Utilities
+# Utilities
 colorama==0.4.6
 requests==2.31.0
 httpx==0.26.0
 pyyaml==6.0.1
-
-# Note: subprocess and pathlib are built-in Python modules, no need to install
