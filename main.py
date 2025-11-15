@@ -1,5 +1,10 @@
 """Main entry point for the AI Autonomous Agent."""
 
+# Disable ChromaDB telemetry BEFORE any imports
+import os
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_IMPL"] = "none"
+
 import sys
 import logging
 import argparse
