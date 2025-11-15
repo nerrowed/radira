@@ -137,6 +137,10 @@ def print_banner():
 
 def print_config():
     """Print current configuration."""
+    # Superuser mode warning
+    superuser_status = "✓ Enabled" if settings.superuser_mode else "✗ Disabled"
+    superuser_color = "red" if settings.superuser_mode else "green"
+
     config_info = f"""
     [bold]Configuration:[/bold]
     • Orchestrator: [cyan]{ORCHESTRATOR_TYPE}[/cyan]
@@ -147,7 +151,11 @@ def print_config():
     • Task Classification: {'✓ Enabled' if settings.enable_task_classification else '✗ Disabled'}
     • Answer Validation: {'✓ Enabled' if settings.enable_answer_validation else '✗ Disabled'}
     • Command Timeout: {settings.command_timeout_seconds}s
-    """
+    • Superuser Mode: [{superuser_color}]{superuser_status}[/{superuser_color}]"""
+
+    if settings.superuser_mode:
+        config_info += "\n      [bold red]⚠️  WARNING: Sudo commands are enabled! Use with caution![/bold red]"
+
     console.print(Panel(config_info, title="Settings", border_style="green"))
 
 

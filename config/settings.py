@@ -165,6 +165,16 @@ class Settings(BaseSettings):
         env="COMMAND_TIMEOUT_SECONDS",
         description="Command execution timeout in seconds"
     )
+    superuser_mode: bool = Field(
+        default=False,
+        env="SUPERUSER_MODE",
+        description="Enable superuser mode (allows sudo commands) - USE WITH CAUTION!"
+    )
+    require_sudo_confirmation: bool = Field(
+        default=True,
+        env="REQUIRE_SUDO_CONFIRMATION",
+        description="Require confirmation before executing sudo commands"
+    )
 
     # ==================== Database Configuration ====================
     redis_url: str = Field(

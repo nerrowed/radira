@@ -45,18 +45,23 @@ class TerminalToolV2(BaseTool):
         'amass', 'nikto', 'dirb', 'gobuster', 'wfuzz',
     }
 
-    # Dangerous commands that should never be allowed
+    # Dangerous commands that should never be allowed (even in superuser mode)
     BLACKLIST = {
         'rm', 'rmdir', 'del', 'erase',  # File deletion
         'format', 'mkfs', 'dd',  # Disk formatting
         'shutdown', 'reboot', 'poweroff', 'halt',  # System control
         'kill', 'killall', 'pkill',  # Process killing
-        'chmod', 'chown', 'chgrp',  # Permission changes
         'iptables', 'ufw', 'firewall-cmd',  # Firewall
-        'systemctl', 'service', 'init',  # Service management
-        'useradd', 'userdel', 'usermod', 'passwd',  # User management
-        'su', 'sudo',  # Privilege escalation
         'mount', 'umount',  # Filesystem mounting
+    }
+
+    # Commands that require sudo but are safe if superuser_mode is enabled
+    SUDO_WHITELIST = {
+        'apt', 'apt-get', 'yum', 'dnf', 'pacman',  # Package managers
+        'systemctl', 'service',  # Service management
+        'chmod', 'chown', 'chgrp',  # Permission changes (with sudo only)
+        'useradd', 'userdel', 'usermod',  # User management (with sudo only)
+        'docker', 'docker-compose',  # Docker (sometimes needs sudo)
     }
 
     def __init__(self, working_directory: Optional[str] = None, timeout: int = None):
@@ -78,7 +83,8 @@ class TerminalToolV2(BaseTool):
 
     @property
     def description(self) -> str:
-        return """Execute terminal/shell commands safely.
+        superuser_status = "✓ ENABLED" if settings.superuser_mode else "✗ DISABLED"
+        return f"""Execute terminal/shell commands safely.
 
 Use this when you need to:
 - Run git commands (git status, git add, git commit, git push, etc.)
@@ -90,17 +96,28 @@ Use this when you need to:
 - Get system information (whoami, hostname, uname, etc.)
 - Use network tools (ping, curl, wget, etc.)
 
+SUPERUSER MODE: {superuser_status}
+When enabled, you can run commands with sudo for:
+• System package installation: sudo apt install package_name
+• Service management: sudo systemctl start/stop service
+• Permission changes: sudo chmod/chown files
+• User management: sudo useradd/usermod username
+• Docker operations: sudo docker commands
+
 IMPORTANT - Common commands:
 • List files: ls -la or dir
 • Git status: git status
 • Install Python package: pip install package_name
 • Install Node package: npm install package_name
+• Install system package (superuser): sudo apt install package_name
 • Run Python script: python script.py
 • Run Node script: node app.js
 • View file: cat filename
 • Search in files: grep "pattern" filename
+• Manage services (superuser): sudo systemctl status service_name
 
-Commands are validated for safety. Dangerous operations like rm, sudo, chmod are blocked.
+Commands are validated for safety. Dangerous operations like rm -rf, shutdown, dd are ALWAYS blocked.
+Sudo commands require SUPERUSER_MODE=true in settings.
 If your command is blocked, try using the appropriate file_system tool instead."""
 
     @property
@@ -126,7 +143,7 @@ Only safe commands are allowed. The command will be validated before execution."
 
     @property
     def examples(self) -> List[str]:
-        return [
+        base_examples = [
             "List files: {'command': 'ls -la'}",
             "Git status: {'command': 'git status'}",
             "Install Python package: {'command': 'pip install requests'}",
@@ -136,6 +153,19 @@ Only safe commands are allowed. The command will be validated before execution."
             "Search files: {'command': 'grep \"TODO\" *.py'}",
             "Git commit: {'command': 'git commit -m \"Update files\"'}"
         ]
+
+        # Add sudo examples if superuser mode is enabled
+        if settings.superuser_mode:
+            sudo_examples = [
+                "Install system package: {'command': 'sudo apt install nginx'}",
+                "Start service: {'command': 'sudo systemctl start nginx'}",
+                "Change permissions: {'command': 'sudo chmod 755 script.sh'}",
+                "Change owner: {'command': 'sudo chown user:group file.txt'}",
+                "Run docker: {'command': 'sudo docker ps'}"
+            ]
+            base_examples.extend(sudo_examples)
+
+        return base_examples
 
     def execute(self, **kwargs) -> ToolResult:
         """Execute terminal command.
@@ -211,11 +241,40 @@ Only safe commands are allowed. The command will be validated before execution."
         if 'cat ' in command_lower or 'type ' in command_lower:
             return "Use the 'read_file' tool instead to read file contents."
 
-        if 'chmod' in command_lower or 'chown' in command_lower:
-            return "Permission changes are not allowed for security reasons."
+        # Sudo-related suggestions
+        if 'sudo' in command_lower:
+            if not settings.superuser_mode:
+                return (
+                    "Superuser mode is currently DISABLED. To enable sudo commands:\n"
+                    "1. Set SUPERUSER_MODE=true in your .env file\n"
+                    "2. Restart the application\n"
+                    "WARNING: Only enable this in trusted environments!"
+                )
+            else:
+                # Sudo is enabled but command might not be in whitelist
+                try:
+                    parts = shlex.split(command)
+                    if len(parts) >= 2:
+                        actual_cmd = Path(parts[1]).stem.lower()
+                        if actual_cmd in self.BLACKLIST:
+                            return f"'{actual_cmd}' is a dangerous command that is NEVER allowed, even with sudo."
+                        elif actual_cmd not in self.SUDO_WHITELIST and actual_cmd not in self.WHITELIST:
+                            allowed = ', '.join(sorted(self.SUDO_WHITELIST))
+                            return f"'{actual_cmd}' is not allowed with sudo. Allowed sudo commands: {allowed}"
+                except:
+                    pass
 
-        if 'sudo' in command_lower or 'su ' in command_lower:
-            return "Privilege escalation is not allowed for security reasons."
+        if 'chmod' in command_lower or 'chown' in command_lower:
+            if settings.superuser_mode:
+                return "Permission changes require sudo. Try: sudo chmod/chown ..."
+            else:
+                return "Permission changes require superuser mode to be enabled."
+
+        if 'systemctl' in command_lower or 'service' in command_lower:
+            if settings.superuser_mode:
+                return "Service management often requires sudo. Try: sudo systemctl ..."
+            else:
+                return "Service management requires superuser mode to be enabled."
 
         # Check if command is not in whitelist
         try:
@@ -258,34 +317,67 @@ Only safe commands are allowed. The command will be validated before execution."
         # Extract just the command name without path
         base_cmd = Path(base_cmd).stem.lower()
 
-        # Check blacklist first
-        if base_cmd in self.BLACKLIST:
-            return False, f"'{base_cmd}' is a dangerous command and is not allowed"
+        # Check if command starts with sudo
+        is_sudo_command = base_cmd == 'sudo'
+        actual_cmd = base_cmd
 
-        # Check for dangerous patterns
+        if is_sudo_command:
+            # Get the actual command after sudo
+            if len(parts) < 2:
+                return False, "Incomplete sudo command (no command specified after sudo)"
+
+            actual_cmd = Path(parts[1]).stem.lower()
+
+            # Check if superuser mode is enabled
+            if not settings.superuser_mode:
+                return False, (
+                    "Sudo commands are disabled. Enable SUPERUSER_MODE in settings to use sudo. "
+                    "WARNING: This should only be enabled in trusted environments!"
+                )
+
+            # Log sudo command attempt
+            logger.warning(f"⚠️  SUDO command requested: {command}")
+
+        # Check blacklist first (ALWAYS blocked, even with sudo)
+        if actual_cmd in self.BLACKLIST:
+            return False, f"'{actual_cmd}' is a dangerous command and is NEVER allowed, even with sudo"
+
+        # Check for dangerous patterns (ALWAYS blocked)
         dangerous_patterns = [
             ('rm -rf /', 'Recursive deletion of root directory'),
             ('rm -rf *', 'Recursive deletion of all files'),
+            ('rm -rf /*', 'Recursive deletion of root'),
             ('> /dev/sda', 'Direct disk access'),
             ('dd if=', 'Disk duplication/formatting'),
             (':(){:|:&};:', 'Fork bomb detected'),
             ('mkfs.', 'Filesystem formatting'),
+            (':()', 'Fork bomb pattern'),
         ]
 
         command_lower = command.lower()
         for pattern, description in dangerous_patterns:
             if pattern in command_lower:
-                return False, f"Dangerous pattern detected: {description}"
+                return False, f"Dangerous pattern detected: {description} - NEVER allowed"
 
-        # Check whitelist
-        if base_cmd not in self.WHITELIST:
-            return False, f"'{base_cmd}' is not in the allowed commands list"
+        # For sudo commands, check SUDO_WHITELIST
+        if is_sudo_command:
+            if actual_cmd not in self.SUDO_WHITELIST and actual_cmd not in self.WHITELIST:
+                return False, (
+                    f"'{actual_cmd}' is not allowed with sudo. "
+                    f"Allowed sudo commands: {', '.join(sorted(self.SUDO_WHITELIST))}"
+                )
+            # Sudo command is valid
+            return True, None
+
+        # For non-sudo commands, check regular whitelist
+        if actual_cmd not in self.WHITELIST:
+            return False, f"'{actual_cmd}' is not in the allowed commands list"
 
         # Additional checks for specific commands
-        if base_cmd == 'rm' and ('-rf' in command or '-fr' in command):
+        if actual_cmd == 'rm' and ('-rf' in command or '-fr' in command):
             return False, "Recursive force delete is not allowed"
 
-        if base_cmd in ['curl', 'wget'] and any(x in command for x in ['|', '>', '>>']):
+        if actual_cmd in ['curl', 'wget'] and any(x in command for x in ['|', '>', '>>']):
             return False, "Output redirection with network tools is not allowed"
 
         return True, None
